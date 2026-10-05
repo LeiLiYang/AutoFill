@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Job Application for Backend Engineer at Acme</title></head>
+<body>
+<div id="app_body">
+  <div id="content">
+    <h1 class="app-title">Backend Engineer</h1>
+    <div class="company-name">Acme Corp</div>
+    <div class="location">Montreal, QC</div>
+    <div id="job_description"><p>Build services for our platform.</p></div>
+  </div>
+  <form id="application_form" action="/acme/jobs/123" method="post">
+    <div class="field"><label for="first_name">First Name <span class="asterisk">*</span></label>
+      <input id="first_name" name="job_application[first_name]" type="text" required></div>
+    <div class="field"><label for="last_name">Last Name <span class="asterisk">*</span></label>
+      <input id="last_name" name="job_application[last_name]" type="text" required></div>
+    <div class="field"><label for="email">Email <span class="asterisk">*</span></label>
+      <input id="email" name="job_application[email]" type="text" required></div>
+    <div class="field"><label for="phone">Phone</label>
+      <input id="phone" name="job_application[phone]" type="text"></div>
+
+    <div class="field" id="resume_fieldset"><label>Resume/CV <span class="asterisk">*</span></label>
+      <input id="resume" name="job_application[resume]" type="file" required></div>
+    <div class="field"><label>Cover Letter</label>
+      <input id="cover_letter" name="job_application[cover_letter]" type="file"></div>
+
+    <div class="field"><label for="q_linkedin">LinkedIn Profile</label>
+      <input id="q_linkedin" name="job_application[answers_attributes][0][text_value]" type="text"></div>
+    <div class="field"><label for="q_auth">Are you legally authorized to work in Canada? <span class="asterisk">*</span></label>
+      <select id="q_auth" name="job_application[answers_attributes][1][boolean_value]" required>
+        <option value="">--</option><option value="1">Yes</option><option value="0">No</option>
+      </select></div>
+    <div class="field"><label for="q_spons">Will you now or in the future require visa sponsorship? <span class="asterisk">*</span></label>
+      <select id="q_spons" name="job_application[answers_attributes][2][boolean_value]" required>
+        <option value="">--</option><option value="1">Yes</option><option value="0">No</option>
+      </select></div>
+    <div class="field"><label for="q_why">Why do you want to work at Acme? <span class="asterisk">*</span></label>
+      <textarea id="q_why" name="job_application[answers_attributes][3][text_value]" required></textarea></div>
+    <div class="field"><label for="q_edu">What is your favorite programming paradigm?</label>
+      <input id="q_edu" name="job_application[answers_attributes][4][text_value]" type="text"></div>
+
+    <fieldset id="eeoc_fields"><legend>Voluntary Self-Identification</legend>
+      <div class="field"><label for="gender">Gender</label>
+        <select id="gender" name="job_application[gender]"><option value="">Please select</option>
+          <option value="1">Male</option><option value="2">Female</option><option value="3">Decline To Self Identify</option></select></div>
+      <div class="field"><label for="hispanic_ethnicity">Are you Hispanic/Latino?</label>
+        <select id="hispanic_ethnicity" name="job_application[hispanic_ethnicity]"><option value="">Please select</option>
+          <option value="1">Yes</option><option value="2">No</option><option value="3">Decline To Self Identify</option></select></div>
+      <div class="field"><label for="veteran_status">Veteran Status</label>
+        <select id="veteran_status" name="job_application[veteran_status]"><option value="">Please select</option>
+          <option value="1">I am not a protected veteran</option><option value="3">I don't wish to answer</option></select></div>
+      <div class="field"><label for="disability_status">Disability Status</label>
+        <select id="disability_status" name="job_application[disability_status]"><option value="">Please select</option>
+          <option value="1">Yes, I have a disability</option><option value="2">No, I do not have a disability</option><option value="3">I do not want to answer</option></select></div>
+    </fieldset>
+
+    <div class="g-recaptcha" data-sitekey="test"><textarea id="g-recaptcha-response" name="g-recaptcha-response" required></textarea></div>
+    <input type="submit" id="submit_app" value="Submit Application">
+  </form>
+</div>
+</body>
+</html>

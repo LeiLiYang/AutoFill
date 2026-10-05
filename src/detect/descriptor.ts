@@ -57,7 +57,21 @@ function labelFor(el: HTMLElement, idx: LabelIndex): string {
     const t = captionText(wrapping);
     if (t) return t;
   }
+  // A <label> with no `for`, sitting directly before the control or as the control wrapper's caption.
+  const prev = el.previousElementSibling;
+  if (prev?.tagName === 'LABEL' && !prev.hasAttribute('for')) return captionText(prev);
+  const parent = el.parentElement;
+  if (parent && parent.querySelectorAll(CONTROL_SELECTOR).length === 1) {
+    const own = Array.from(parent.children).find((c) => c.tagName === 'LABEL' && !c.hasAttribute('for'));
+    if (own) return captionText(own);
+  }
   return '';
+}
+
+/** True when the field holds an answer right now (files count by attachment). */
+export function hasValue(d: FieldDescriptor): boolean {
+  if (d.kind === 'file') return !!(d.element as HTMLInputElement).files?.length;
+  return currentAnswerText(d) !== '';
 }
 
 /** Closest preceding text that is not the control's own caption: used when there is no label. */
@@ -111,6 +125,16 @@ function readCurrentValue(el: HTMLElement, kind: FieldKind, group?: HTMLInputEle
     return shown?.textContent?.trim() ?? '';
   }
   return (el as HTMLInputElement | HTMLTextAreaElement).value ?? '';
+}
+
+/** What the control holds right now, as human-readable answer text (re-reads the live DOM). */
+export function currentAnswerText(d: FieldDescriptor): string {
+  if (d.kind === 'radio' || d.kind === 'checkbox') {
+    const chosen = (d.options ?? []).filter((o) => (o.element as HTMLInputElement | undefined)?.checked);
+    return chosen.map((o) => o.text).join(', ');
+  }
+  if (d.kind === 'file') return '';
+  return readCurrentValue(d.element, d.kind).trim();
 }
 
 function isRequired(el: HTMLElement, label: string, group?: HTMLElement[]): boolean {

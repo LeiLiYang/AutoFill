@@ -6,7 +6,7 @@ import { dispatchInput, setNativeValue } from './text';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-async function waitFor<T>(fn: () => T | null | undefined | false, timeout = 1500, interval = 50): Promise<T | null> {
+export async function waitFor<T>(fn: () => T | null | undefined | false, timeout = 1500, interval = 50): Promise<T | null> {
   const end = Date.now() + timeout;
   for (;;) {
     const v = fn();

@@ -1,10 +1,12 @@
 import type {
   AdapterContext,
+  FieldDescriptor,
   FieldReport,
   FillOptions,
   FillStatus,
   PlatformAdapter,
 } from '../adapters/types';
+import { hasValue } from '../detect/descriptor';
 import { matchField } from '../detect/match';
 import { resolveValue } from '../detect/values';
 import type { Profile } from '../profile/schema';
@@ -16,8 +18,8 @@ export const HIGH_CONFIDENCE = 0.8;
 
 export interface FillRun {
   reports: FieldReport[];
-  /** id → element, so the review panel can scroll to and highlight fields. */
-  elements: Map<string, HTMLElement>;
+  /** id → descriptor, so the review panel can scroll to, highlight and re-read fields. */
+  descriptors: Map<string, FieldDescriptor>;
 }
 
 export interface RunFillInput {
@@ -36,13 +38,15 @@ function preview(text: string): string {
 export async function runFill({ adapter, ctx, profile, options }: RunFillInput): Promise<FillRun> {
   const fields = adapter.getFields(ctx);
   const reports: FieldReport[] = [];
-  const elements = new Map<string, HTMLElement>();
+  const descriptors = new Map<string, FieldDescriptor>();
 
   for (const d of fields) {
-    elements.set(d.id, d.element);
-    const base = { id: d.id, label: d.label || d.ariaLabel || d.placeholder || d.name || '(unlabeled)', kind: d.kind, required: d.required };
+    descriptors.set(d.id, d);
+    const label = d.label || d.ariaLabel || d.placeholder || d.nearbyText?.slice(0, 80) || d.name || '(unlabeled)';
+    const base = { id: d.id, label, kind: d.kind, required: d.required };
     const report = (status: FillStatus, extra: Partial<FieldReport> = {}): void => {
-      const emptyRequired = d.required && !FILLED.includes(status) && !d.currentValue;
+      // Judged on the live value after the attempt: typed-but-unconfirmed text is yellow, not red.
+      const emptyRequired = d.required && !FILLED.includes(status) && !hasValue(d);
       reports.push({ ...base, confidence: 0, status, emptyRequired, ...extra });
     };
 
@@ -87,5 +91,5 @@ export async function runFill({ adapter, ctx, profile, options }: RunFillInput):
       report('failed', { key: match.key, confidence: match.confidence, detail: (e as Error).message });
     }
   }
-  return { reports, elements };
+  return { reports, descriptors };
 }

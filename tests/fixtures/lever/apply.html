@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Acme Corp - Software Engineer</title></head>
+<body>
+<div class="posting-headline"><h2>Software Engineer</h2>
+  <div class="posting-categories"><div class="location">Montréal, QC</div></div></div>
+<form id="application-form" method="POST" action="/acme/abc/apply">
+  <ul>
+    <li class="application-question"><label><div class="application-label">Resume/CV<span class="required">✱</span></div>
+      <div class="application-field"><input type="file" name="resume" id="resume-upload-input" required></div></label></li>
+    <li class="application-question"><label><div class="application-label">Full name<span class="required">✱</span></div>
+      <div class="application-field"><input type="text" name="name" required></div></label></li>
+    <li class="application-question"><label><div class="application-label">Email<span class="required">✱</span></div>
+      <div class="application-field"><input type="email" name="email" required></div></label></li>
+    <li class="application-question"><label><div class="application-label">Phone</div>
+      <div class="application-field"><input type="text" name="phone"></div></label></li>
+    <li class="application-question"><label><div class="application-label">Current location<span class="required">✱</span></div>
+      <div class="application-field">
+        <input type="text" name="location" id="location-input" required autocomplete="off">
+        <input type="hidden" name="selectedLocation" id="selected-location">
+        <div class="dropdown-container"><div class="dropdown-results" hidden></div></div>
+      </div></label></li>
+    <li class="application-question"><label><div class="application-label">Current company</div>
+      <div class="application-field"><input type="text" name="org"></div></label></li>
+    <li class="application-question"><label><div class="application-label">LinkedIn URL</div>
+      <div class="application-field"><input type="text" name="urls[LinkedIn]"></div></label></li>
+    <li class="application-question"><label><div class="application-label">GitHub URL</div>
+      <div class="application-field"><input type="text" name="urls[GitHub]"></div></label></li>
+    <li class="application-question"><label><div class="application-label">Portfolio URL</div>
+      <div class="application-field"><input type="text" name="urls[Portfolio]"></div></label></li>
+
+    <li class="application-question custom-question"><label><div class="application-label">Are you legally authorized to work in Canada?<span class="required">✱</span></div>
+      <div class="application-field"><ul data-qa="multiple-choice">
+        <li><label><input type="radio" name="cards[u1][field0]" value="Yes" required><span class="application-answer-alternative">Yes</span></label></li>
+        <li><label><input type="radio" name="cards[u1][field0]" value="No"><span class="application-answer-alternative">No</span></label></li>
+      </ul></div></label></li>
+    <li class="application-question custom-question"><label><div class="application-label">Do you now or will you require visa sponsorship?<span class="required">✱</span></div>
+      <div class="application-field"><ul data-qa="multiple-choice">
+        <li><label><input type="radio" name="cards[u2][field0]" value="Yes" required><span class="application-answer-alternative">Yes</span></label></li>
+        <li><label><input type="radio" name="cards[u2][field0]" value="No"><span class="application-answer-alternative">No</span></label></li>
+      </ul></div></label></li>
+    <li class="application-question custom-question"><label><div class="application-label">Tell us about a project you are proud of<span class="required">✱</span></div>
+      <div class="application-field"><textarea name="cards[u3][field0]" required></textarea></div></label></li>
+
+    <li class="application-question"><label><div class="application-label">Additional information</div>
+      <div class="application-field"><textarea name="comments"></textarea></div></label></li>
+
+    <li class="application-question"><label><div class="application-label">Gender</div>
+      <div class="application-field"><select name="eeo[gender]"><option value="">Select...</option>
+        <option>Male</option><option>Female</option><option>Decline to self-identify</option></select></div></label></li>
+    <li class="application-question"><label><div class="application-label">Veteran status</div>
+      <div class="application-field"><select name="eeo[veteran]"><option value="">Select...</option>
+        <option>I am a veteran</option><option>I decline to self-identify</option></select></div></label></li>
+  </ul>
+  <div class="h-captcha" data-sitekey="x"><textarea name="h-captcha-response"></textarea></div>
+  <button type="submit" id="btn-submit" class="postings-btn">Submit application</button>
+</form>
+<script>
+  // Mimic Lever's location autocomplete: suggestions appear on input and must be clicked.
+  const input = document.getElementById('location-input');
+  const results = document.querySelector('.dropdown-results');
+  input.addEventListener('input', () => {
+    results.hidden = false;
+    results.innerHTML = '';
+    const opt = document.createElement('div');
+    opt.className = 'dropdown-location';
+    opt.textContent = 'Montréal, Quebec, Canada';
+    opt.addEventListener('click', () => {
+      document.getElementById('selected-location').value = opt.textContent;
+      input.value = opt.textContent;
+      results.hidden = true;
+    });
+    results.appendChild(opt);
+  });
+</script>
+</body>
+</html>

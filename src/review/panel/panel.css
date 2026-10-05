@@ -1,0 +1,27 @@
+:host { all: initial; }
+.panel {
+  --bg: #fff; --fg: #1a1a1a; --muted: #666; --line: #dde0e5; --g: #1e9e4a; --y: #e6a700; --r: #d93025;
+  position: fixed; right: 16px; bottom: 16px; z-index: 2147483647; width: 340px; max-height: 70vh; overflow: auto;
+  box-sizing: border-box; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 10px;
+  box-shadow: 0 6px 24px rgba(0,0,0,.25); font: 13px/1.4 system-ui, sans-serif; padding: 12px;
+}
+@media (prefers-color-scheme: dark) {
+  .panel { --bg: #1f2227; --fg: #e8e8e8; --muted: #a0a4ab; --line: #3a3f47; }
+}
+header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.close { background: none; border: 0; color: var(--fg); font-size: 18px; cursor: pointer; line-height: 1; }
+.counts { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+.chip { border-radius: 999px; padding: 2px 8px; font-size: 12px; color: #fff; }
+.chip.g { background: var(--g); } .chip.y { background: var(--y); color: #1a1a1a; } .chip.r { background: var(--r); }
+h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 10px 0 4px; }
+ul { list-style: none; margin: 0; padding: 0; }
+.row { all: unset; box-sizing: border-box; display: flex; justify-content: space-between; gap: 8px; width: 100%;
+  padding: 5px 8px; border-left: 4px solid var(--line); cursor: pointer; border-radius: 3px; }
+.row:hover, .row:focus-visible { background: rgba(127,127,127,.15); }
+.row.r { border-left-color: var(--r); } .row.y { border-left-color: var(--y); } .row.n { border-left-color: var(--line); }
+.label { overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.why { color: var(--muted); font-size: 11px; white-space: nowrap; }
+.link { background: none; border: 0; padding: 0; color: inherit; font: inherit; text-transform: inherit; letter-spacing: inherit; cursor: pointer; }
+footer { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; display: grid; gap: 6px; }
+.action { background: #1a73e8; color: #fff; border: 0; border-radius: 6px; padding: 7px 10px; font: inherit; cursor: pointer; }
+.note { color: var(--muted); font-size: 12px; margin: 0; }
