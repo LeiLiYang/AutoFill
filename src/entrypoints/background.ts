@@ -1,6 +1,7 @@
+import { savePosting } from '../background/savePosting';
 import { getFile } from '../profile/files';
-import { bytesToBase64 } from '../profile/importExport';
 import { loadProfile, loadSettings, saveProfile } from '../profile/store';
+import { bytesToBase64 } from '../util/base64';
 import { normalize } from '../detect/normalize';
 import {
   reportsKey,
@@ -95,10 +96,16 @@ async function collectAndSaveAnswers(tabId: number): Promise<number> {
   return saveAnswers(collected);
 }
 
+/** Inject the content script into the top frame only (idempotent: it guards against double install). */
+const ensureInjected = (tabId: number) =>
+  chrome.scripting.executeScript({ target: { tabId }, files: [CONTENT_SCRIPT] }).then(() => undefined);
+
+const runSavePosting = (tabId: number) => savePosting(tabId, { ensureInjected, getFrames: getReports });
+
 export default defineBackground(() => {
   if (import.meta.env.MODE === 'test') {
     // Test hook for Playwright: there is no user gesture to press the toolbar button or shortcut.
-    (globalThis as any).__autofill = { triggerFill };
+    (globalThis as any).__autofill = { triggerFill, savePosting: runSavePosting };
   }
 
   chrome.commands.onCommand.addListener(async (command, tab) => {
@@ -131,6 +138,12 @@ export default defineBackground(() => {
         if (tabId == null) return;
         collectAndSaveAnswers(tabId).then((saved) => sendResponse({ saved }), () => sendResponse({ saved: 0 }));
         return true;
+      case 'save-posting': {
+        const target = msg.tabId ?? tabId;
+        if (target == null) return;
+        runSavePosting(target).then(sendResponse);
+        return true;
+      }
     }
   });
 });

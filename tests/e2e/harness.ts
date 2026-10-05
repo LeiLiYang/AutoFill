@@ -29,7 +29,9 @@ function serve(embedTarget: () => string): Promise<{ server: Server; origin: str
           <iframe id="grnhse_iframe" src="${embedTarget()}/greenhouse/classic.html" width="900" height="1400"></iframe>`);
         return;
       }
-      const file = join(FIXTURES, path);
+      // Pretty URLs that look like real ATS paths (the Lever apply form lives at …/apply).
+      const aliases: Record<string, string> = { '/acme/abc/apply': '/lever/apply.html' };
+      const file = join(FIXTURES, aliases[path] ?? path);
       if (!file.startsWith(FIXTURES) || !existsSync(file)) {
         reply.statusCode = 404;
         reply.end('not found');
@@ -131,6 +133,15 @@ export async function triggerFill(ext: Ext, page: Page): Promise<void> {
     const [tab] = await chrome.tabs.query({ url: u });
     if (!tab?.id) throw new Error(`no tab for ${u}`);
     await (globalThis as any).__autofill.triggerFill(tab.id);
+  }, url);
+}
+
+export async function savePosting(ext: Ext, page: Page): Promise<any> {
+  const url = page.url();
+  return ext.worker.evaluate(async (u) => {
+    const [tab] = await chrome.tabs.query({ url: u });
+    if (!tab?.id) throw new Error(`no tab for ${u}`);
+    return (globalThis as any).__autofill.savePosting(tab.id);
   }, url);
 }
 

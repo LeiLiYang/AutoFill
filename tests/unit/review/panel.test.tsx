@@ -48,12 +48,14 @@ describe('Panel', () => {
     const root = createRoot(host);
     const onScroll = vi.fn();
     const onSaveAnswers = vi.fn().mockResolvedValue(2);
+    const onSavePosting = vi.fn().mockResolvedValue({ ok: false, code: 'form-only', message: 'Open the job posting page.' });
     flushSync(() =>
       root.render(
         <Panel
           filling={false}
           onScroll={onScroll}
           onSaveAnswers={onSaveAnswers}
+          onSavePosting={onSavePosting}
           onClose={() => {}}
           frames={[
             {
@@ -70,8 +72,16 @@ describe('Panel', () => {
         />,
       ),
     );
-    return { host, onScroll, onSaveAnswers };
+    return { host, onScroll, onSaveAnswers, onSavePosting };
   };
+
+  it('shows the form-only guidance when the posting cannot be saved from this page', async () => {
+    const { host, onSavePosting } = render();
+    const btn = Array.from(host.querySelectorAll('button.action')).find((b) => b.textContent === 'Save posting') as HTMLElement;
+    btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await vi.waitFor(() => expect(host.textContent).toContain('Open the job posting page.'));
+    expect(onSavePosting).toHaveBeenCalled();
+  });
 
   it('lists required-empty and review items, and scrolls to the clicked field in its frame', () => {
     const { host, onScroll } = render();

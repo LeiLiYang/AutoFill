@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { base64ToBytes, bytesToBase64 } from '../util/base64';
 import { getFile, putFile, deleteFile } from './files';
 import {
   FileKindSchema,
@@ -26,22 +27,6 @@ const BackupSchema = z.object({
   files: z.record(FileKindSchema, ExportedFileSchema).default({}),
 });
 export type Backup = z.infer<typeof BackupSchema>;
-
-export function bytesToBase64(bytes: Uint8Array): string {
-  let bin = '';
-  const chunk = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunk) {
-    bin += String.fromCharCode(...bytes.subarray(i, i + chunk));
-  }
-  return btoa(bin);
-}
-
-export function base64ToBytes(b64: string): Uint8Array {
-  const bin = atob(b64);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
-}
 
 const KINDS: FileKind[] = ['resume', 'coverLetter'];
 

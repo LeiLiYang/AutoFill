@@ -24,4 +24,8 @@ ul { list-style: none; margin: 0; padding: 0; }
 .link { background: none; border: 0; padding: 0; color: inherit; font: inherit; text-transform: inherit; letter-spacing: inherit; cursor: pointer; }
 footer { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; display: grid; gap: 6px; }
 .action { background: #1a73e8; color: #fff; border: 0; border-radius: 6px; padding: 7px 10px; font: inherit; cursor: pointer; }
+.action.secondary { background: transparent; color: var(--fg); border: 1px solid var(--line); }
+.action:disabled { opacity: .6; cursor: default; }
 .note { color: var(--muted); font-size: 12px; margin: 0; }
+.note.err { color: var(--r); }
+.files { margin: 2px 0 0; padding-left: 16px; list-style: disc; }

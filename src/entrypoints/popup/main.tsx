@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import ReactDOM from 'react-dom/client';
 import type { FieldReport } from '../../adapters/types';
-import { reportsKey, type FrameReport, type ToBackground } from '../../messaging/protocol';
+import { reportsKey, type FrameReport, type SavePostingResult, type ToBackground } from '../../messaging/protocol';
 import { loadSettings, saveSettings } from '../../profile/store';
 import './style.css';
 
@@ -35,6 +35,15 @@ function Popup() {
     setBusy(false);
   };
 
+  const [postingMsg, setPostingMsg] = useState<string | null>(null);
+  const savePosting = async () => {
+    if (tabId == null) return;
+    setPostingMsg('Saving…');
+    const msg: ToBackground = { type: 'save-posting', tabId };
+    const res = (await chrome.runtime.sendMessage(msg)) as SavePostingResult;
+    setPostingMsg(res.ok ? `Saved to Downloads/${res.folder}${res.warnings.length ? ` (${res.warnings[0]})` : ''}` : res.message);
+  };
+
   const toggleOverwrite = async (v: boolean) => {
     setOverwrite(v);
     await saveSettings({ ...(await loadSettings()), overwrite: v });
@@ -62,6 +71,8 @@ function Popup() {
           <li><span className="dot r" /> {red} required, empty</li>
         </ul>
       )}
+      <button className="secondary" onClick={savePosting} disabled={tabId == null}>Save posting</button>
+      {postingMsg && <p className="note">{postingMsg}</p>}
       <p className="note">Never submits. Review the form, then click Submit yourself.</p>
       <a href="#" onClick={(e) => { e.preventDefault(); chrome.runtime.openOptionsPage(); }}>Profile &amp; settings</a>
     </div>

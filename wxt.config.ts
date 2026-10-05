@@ -21,6 +21,7 @@ export default defineConfig({
       'downloads',
       'pageCapture',
       'alarms',
+      'offscreen',
     ],
     host_permissions: [
       '*://*.greenhouse.io/*',

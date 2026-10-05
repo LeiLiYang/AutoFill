@@ -64,7 +64,7 @@ test('greenhouse: fills form, attaches resume, highlights, scrolls, saves manual
 
   // Answer manually, then save to the answer bank.
   await page.locator('#q_why').fill('Because the mission resonates.');
-  await panel.locator('button.action').click();
+  await panel.locator('button.action', { hasText: 'Save my answers' }).click();
   await expect(panel).toContainText('Saved 1 answer');
   const bank = await ext.worker.evaluate(async () => (await chrome.storage.local.get('profile')).profile.answerBank);
   expect(bank).toHaveLength(1);

@@ -1,11 +1,13 @@
 import { pickAdapter } from '../adapters/registry';
 import type { FieldDescriptor } from '../adapters/types';
 import { runFill } from '../fill/engine';
-import type { FileMessage, FrameReport, ToBackground, ToContent } from '../messaging/protocol';
-import { base64ToBytes } from '../profile/importExport';
+import type { FileMessage, FrameReport, SavePostingResult, ToBackground, ToContent } from '../messaging/protocol';
+import { extractPosting } from '../posting/extract';
 import type { FileKind } from '../profile/schema';
 import { loadProfile } from '../profile/store';
+import { base64ToBytes } from '../util/base64';
 import { captureAnswers } from '../review/capture';
+import { collectFormAnswers } from '../review/formAnswers';
 import { clearHighlights, highlight, levelFor, scrollToField } from '../review/highlight';
 import { mountPanel, type PanelHandle } from '../review/panel/mountPanel';
 
@@ -43,6 +45,7 @@ export default defineContentScript({
         filling,
         onScroll: (frameId: number, fieldId: string) => void send({ type: 'focus-field', frameId, fieldId }),
         onSaveAnswers: async () => (await send<{ saved: number }>({ type: 'save-answers' }))?.saved ?? 0,
+        onSavePosting: () => send<SavePostingResult>({ type: 'save-posting' }),
         onClose: () => {
           panel?.unmount();
           panel = null;
@@ -100,6 +103,12 @@ export default defineContentScript({
         }
         case 'collect-answers':
           sendResponse({ answers: captureAnswers(descriptors, lastReports) });
+          return;
+        case 'collect-form-answers':
+          sendResponse({ answers: collectFormAnswers(descriptors, lastReports) });
+          return;
+        case 'extract-posting':
+          sendResponse({ posting: extractPosting(document, new URL(location.href)) });
           return;
       }
     });
