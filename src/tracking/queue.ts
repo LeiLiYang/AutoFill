@@ -67,7 +67,12 @@ export function createLogger(deps: LoggerDeps) {
         try {
           const rows = await readDuplicates(sheetId, tabName, v.entry.url, true);
           if (rows.length) {
-            return { ok: false, code: 'duplicate', rows, message: `This URL is already in the sheet (row ${rows.join(', ')}).` };
+            return {
+              ok: false,
+              code: 'duplicate',
+              rows,
+              message: `This URL is already in the sheet (row ${rows.join(', ')}). If you logged it earlier as a saved posting, update that row in the sheet; use Log anyway only to add a second row.`,
+            };
           }
         } catch (e) {
           if (e instanceof SheetsError && e.kind === 'auth') return { ok: false, code: 'auth', message: e.message };

@@ -157,6 +157,12 @@ async function collectAndSaveAnswers(tabId: number): Promise<SaveAnswersResult> 
 const ensureInjected = (tabId: number) =>
   chrome.scripting.executeScript({ target: { tabId }, files: [CONTENT_SCRIPT] }).then(() => undefined);
 
+/** Open the review panel's log card for this page without reading or filling any field. */
+async function openLogPanel(tabId: number) {
+  await ensureInjected(tabId);
+  await chrome.tabs.sendMessage(tabId, { type: 'open-log' } satisfies ToContent, { frameId: 0 });
+}
+
 const runSavePosting = (tabId: number) => savePosting(tabId, { ensureInjected, getFrames: getReports });
 
 /** The Anthropic client factory is swappable so end-to-end tests never call the real API. */
@@ -221,6 +227,7 @@ export default defineBackground(() => {
     // and tests must not talk to Google.
     (globalThis as any).__autofill = {
       triggerFill,
+      openLogPanel,
       savePosting: runSavePosting,
       setSheets: (deps: SheetsDeps) => (sheetsDeps = deps),
       setClaude: (factory: (apiKey: string) => ClaudeDeps) => (claudeFactory = factory),
@@ -239,14 +246,19 @@ export default defineBackground(() => {
   });
 
   chrome.commands.onCommand.addListener(async (command, tab) => {
-    if (command !== 'fill-page') return;
+    if (command !== 'fill-page' && command !== 'log-posting') return;
     const target = tab ?? (await chrome.tabs.query({ active: true, currentWindow: true }))[0];
-    if (target?.id != null) await triggerFill(target.id);
+    if (target?.id == null) return;
+    if (command === 'fill-page') await triggerFill(target.id);
+    else await openLogPanel(target.id);
   });
 
   chrome.runtime.onMessage.addListener((msg: ToBackground, sender, sendResponse) => {
     const tabId = sender.tab?.id;
     switch (msg.type) {
+      case 'open-log':
+        openLogPanel(msg.tabId).then(() => sendResponse({ ok: true }), (e) => sendResponse({ ok: false, error: String(e) }));
+        return true;
       case 'trigger-fill':
         triggerFill(msg.tabId, msg.overwrite).then(() => sendResponse({ ok: true }), (e) => sendResponse({ ok: false, error: String(e) }));
         return true;

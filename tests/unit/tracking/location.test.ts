@@ -27,6 +27,22 @@ describe('Rule 1: a single listed city → that city', () => {
   )('%s → %s', (input, expected) => expect(classifyLocation(input)).toBe(expected));
 });
 
+describe('ISO country codes after a place are a repeat, not a second place', () => {
+  it.each(
+    cases([
+      ['Toronto, ON, CA', 'toronto'], // CA = Canada here, not California
+      ['Montreal, QC, CA', 'montreal'],
+      ['Vancouver, BC, CA', 'vancouver'],
+      ['Ottawa, ON, CA', 'canada'],
+      ['Austin, TX, US', 'USA'],
+      ['San Francisco, CA, US', 'USA'],
+      ['London, GB', 'london'],
+      ['Toronto, ON, CA; San Francisco, CA, US', 'canada'], // a real second place is still detected
+      ['Toronto, ON, CA; Vancouver, BC, CA', 'canada'],
+    ]),
+  )('%s → %s', (input, expected) => expect(classifyLocation(input)).toBe(expected));
+});
+
 describe('Rule 2: a single unlisted Canadian location, or "Remote - Canada" → canada', () => {
   it.each(
     cases([

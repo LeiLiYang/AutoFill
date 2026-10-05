@@ -47,12 +47,16 @@ export type ToContent =
   | { type: 'panel-update'; frames: FrameReport[]; filling: boolean }
   | { type: 'scroll-to'; fieldId: string }
   | { type: 'collect-answers' }
+  /** Show the log card for this posting without filling anything (the user may not be applying). */
+  | { type: 'open-log' }
   | { type: 'collect-form-answers' }
   | { type: 'extract-posting' };
 
 /** Content script / popup → background. */
 export type ToBackground =
   | { type: 'trigger-fill'; tabId: number; overwrite?: boolean }
+  /** Popup / shortcut: open the log card only, no autofill. */
+  | { type: 'open-log'; tabId: number }
   | { type: 'frame-report'; report: FrameReport }
   | { type: 'get-file'; kind: FileKind }
   | { type: 'focus-field'; frameId: number; fieldId: string }

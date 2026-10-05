@@ -77,14 +77,20 @@ function readJobPostingLd(doc: Document): JobLd | null {
   return null;
 }
 
+/** schema.org uses ISO country codes ("CA"); spell out the common ones so they read as countries, not states. */
+const ISO_COUNTRIES: Record<string, string> = {
+  CA: 'Canada', US: 'United States', GB: 'United Kingdom', UK: 'United Kingdom', IE: 'Ireland', DE: 'Germany',
+  FR: 'France', IN: 'India', AU: 'Australia', NL: 'Netherlands', ES: 'Spain', SG: 'Singapore', JP: 'Japan',
+};
+
 function locationFromLd(loc: unknown): string {
   const list = Array.isArray(loc) ? loc : loc ? [loc] : [];
   return list
     .map((l: any) => {
       const a = l?.address ?? l;
-      return [a?.addressLocality, a?.addressRegion, typeof a?.addressCountry === 'string' ? a.addressCountry : a?.addressCountry?.name]
-        .filter(Boolean)
-        .join(', ');
+      const raw = typeof a?.addressCountry === 'string' ? a.addressCountry : a?.addressCountry?.name;
+      const country = typeof raw === 'string' ? (ISO_COUNTRIES[raw.trim().toUpperCase()] ?? raw) : raw;
+      return [a?.addressLocality, a?.addressRegion, country].filter(Boolean).join(', ');
     })
     .filter(Boolean)
     .join(' | ');

@@ -54,6 +54,10 @@ export default defineConfig({
         suggested_key: { default: 'Alt+Shift+F' },
         description: 'Autofill the current job application',
       },
+      'log-posting': {
+        suggested_key: { default: 'Alt+Shift+L' },
+        description: 'Log this job posting to your sheet (no autofill)',
+      },
     },
     // No content_scripts on purpose: nothing runs on any page until the user triggers it.
   }),

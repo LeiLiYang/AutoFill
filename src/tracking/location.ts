@@ -72,7 +72,10 @@ function placesOf(segment: string): Place[] {
     const region = regionOf(token, !!current);
     if (region) {
       if (current && !current.country) current.country = region.country;
-      else {
+      else if (current && token.length <= 3) {
+        // A short code after a place that already has its country is a repeat, not a second place:
+        // "Toronto, ON, CA" where CA is the ISO code for Canada, not California.
+      } else {
         // Standalone region/country ("Canada", "Ontario", "New York"): a country-only place.
         current = { country: region.country };
         places.push(current);

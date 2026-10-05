@@ -11,6 +11,8 @@ export interface PanelProps {
   filling: boolean;
   /** LinkedIn: the extension never autofills there; the panel only logs and saves the posting. */
   logOnly?: boolean;
+  /** Explains why no fields are listed in log-only mode. */
+  logOnlyNote?: string;
   /** Null until the page has been read. */
   prefill?: LogPrefill | null;
   onScroll: (frameId: number, fieldId: string) => void;
@@ -61,7 +63,7 @@ export function describeSave(r: SaveAnswersResult): string {
   );
 }
 
-export function Panel({ frames, filling, logOnly, prefill, onScroll, onSaveAnswers, onSavePosting, onLog, onClose }: PanelProps) {
+export function Panel({ frames, filling, logOnly, logOnlyNote, prefill, onScroll, onSaveAnswers, onSavePosting, onLog, onClose }: PanelProps) {
   const [saved, setSaved] = useState<string | null>(null);
   const [showOther, setShowOther] = useState(false);
   const [posting, setPosting] = useState<SavePostingResult | 'saving' | null>(null);
@@ -122,7 +124,7 @@ export function Panel({ frames, filling, logOnly, prefill, onScroll, onSaveAnswe
       {filling && <p className="note">Filling…</p>}
 
       {logOnly ? (
-        <p className="note">Autofill is off on LinkedIn. You can still log this application and save the posting.</p>
+        <p className="note">{logOnlyNote || 'Nothing is being filled. You can still log this posting and save it.'}</p>
       ) : (
         <div className="counts">
           <span className="chip g">{green.length} filled</span>

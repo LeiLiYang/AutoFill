@@ -54,7 +54,7 @@ describe('extractPosting: fallbacks', () => {
       description: `<p>${LONG}</p><ul><li>Kubernetes</li></ul>`,
     })}</script><div>Loading…</div>`);
     const p = extractPosting(document, u('https://careers.globex.com/jobs/1'));
-    expect(p).toMatchObject({ title: 'Platform Engineer', company: 'Globex', location: 'London, GB', source: 'jsonld' });
+    expect(p).toMatchObject({ title: 'Platform Engineer', company: 'Globex', location: 'London, United Kingdom', source: 'jsonld' });
     expect(p.salary).toBe('GBP 70000–90000 per year');
     expect(p.descriptionMd).toContain('- Kubernetes');
   });

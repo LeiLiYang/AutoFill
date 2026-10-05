@@ -45,6 +45,7 @@ export default defineContentScript({
     let filling = false;
     let generated = new Map<string, string>();
     let logOnly = false;
+    let logOnlyNote = '';
     let prefill: LogPrefill | null = null;
 
     const send = <T = unknown>(msg: ToBackground) => chrome.runtime.sendMessage(msg) as Promise<T>;
@@ -60,6 +61,7 @@ export default defineContentScript({
         frames,
         filling,
         logOnly,
+        logOnlyNote,
         prefill,
         onScroll: (frameId: number, fieldId: string) => void send({ type: 'focus-field', frameId, fieldId }),
         onSaveAnswers: async (): Promise<SaveAnswersResult> =>
@@ -115,18 +117,23 @@ export default defineContentScript({
       };
     }
 
+    /** Panel with the log card only: nothing is read from or written to the page's form fields. */
+    function showLogOnly(note: string) {
+      clearHighlights();
+      logOnly = true;
+      logOnlyNote = note;
+      filling = false;
+      frames = [];
+      prefill = computePrefill();
+      renderPanel();
+    }
+
     async function run(overwrite: boolean) {
       clearHighlights();
       const url = new URL(location.href);
       if (isLinkedIn(url)) {
         // LinkedIn: log and save the posting only. Never fill there.
-        if (isTop) {
-          logOnly = true;
-          filling = false;
-          frames = [];
-          prefill = computePrefill();
-          renderPanel();
-        }
+        if (isTop) showLogOnly('Autofill is off on LinkedIn. You can still log this application and save the posting.');
         return;
       }
       if (isTop) {
@@ -163,6 +170,12 @@ export default defineContentScript({
             (e) => sendResponse({ ok: false, error: String(e) }),
           );
           return true;
+        case 'open-log':
+          if (isTop) {
+            showLogOnly("Nothing is being filled. Log this posting to your sheet (you don't need to have applied), or save it for later.");
+          }
+          sendResponse({ ok: true });
+          return;
         case 'panel-update':
           if (isTop) {
             frames = msg.frames;

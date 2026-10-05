@@ -68,6 +68,10 @@ Click **Save** (bottom bar) after editing.
 
 **Forms inside iframes** (a Greenhouse form embedded on a company site) work: the script is injected into every frame of the tab you triggered, and the panel appears in the top frame. Limitation: on an unknown site, cross-origin iframes from a domain the extension has no permission for can't be reached; the panel will simply list no fields from them.
 
+### Log a posting without applying
+
+You can log any job to your sheet whether or not you are applying. On a posting page (or any page), click the toolbar icon → **Log posting only (no autofill)**, or press **Alt+Shift+L**. The log card opens with company, category, location and URL filled in from the page, and **no form field is read or filled**. Logging never marks a job as applied: column C (Status) is always left empty, so use it however you like in the sheet. If you later log the same job, you get the duplicate warning with the row number, so you can update that row instead.
+
 ### Log application
 
 The panel includes a **Log application** card, pre-filled and fully editable:
@@ -153,7 +157,7 @@ Network destinations are limited by the manifest to the supported ATS sites, Lin
 
 ## What is and isn't verified
 
-**Verified by automated tests** (387 unit tests; 36 end-to-end tests that load the built extension in a real browser against local fixtures): matching rules, the fill mechanics (including React-style controlled inputs, selects, radios, custom dropdowns, file inputs), the never-submit and never-CAPTCHA guards, the log/duplicate/escape/queue logic against a fake Sheets server, every location rule, posting extraction and the real MHTML/Markdown/JSON files, the answer bank and LLM flow with a stubbed model, the pinned extension ID, and a production-bundle check that no test hooks ship.
+**Verified by automated tests** (396 unit tests; 39 end-to-end tests that load the built extension in a real browser against local fixtures): matching rules, the fill mechanics (including React-style controlled inputs, selects, radios, custom dropdowns, file inputs), the never-submit and never-CAPTCHA guards, the log/duplicate/escape/queue logic against a fake Sheets server, every location rule, posting extraction and the real MHTML/Markdown/JSON files, the answer bank and LLM flow with a stubbed model, the pinned extension ID, and a production-bundle check that no test hooks ship.
 
 **Not verified against the real services**, and worth a first run with a throwaway sheet and a real application you are not going to submit:
 

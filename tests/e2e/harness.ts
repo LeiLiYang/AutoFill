@@ -150,6 +150,16 @@ export async function triggerFill(ext: Ext, page: Page): Promise<void> {
   }, url);
 }
 
+/** Same code path as the popup button / Alt+Shift+L: open the log card, fill nothing. */
+export async function openLogPanel(ext: Ext, page: Page): Promise<void> {
+  const url = page.url();
+  await ext.worker.evaluate(async (u) => {
+    const [tab] = await chrome.tabs.query({ url: u });
+    if (!tab?.id) throw new Error(`no tab for ${u}`);
+    await (globalThis as any).__autofill.openLogPanel(tab.id);
+  }, url);
+}
+
 export async function savePosting(ext: Ext, page: Page): Promise<any> {
   const url = page.url();
   return ext.worker.evaluate(async (u) => {

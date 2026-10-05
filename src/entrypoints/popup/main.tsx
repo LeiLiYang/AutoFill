@@ -44,6 +44,13 @@ function Popup() {
     await queueAction({ type: 'queue-retry' });
     setRetrying(false);
   };
+  const logPosting = async () => {
+    if (tabId == null) return;
+    const msg: ToBackground = { type: 'open-log', tabId };
+    const res = (await chrome.runtime.sendMessage(msg)) as { ok: boolean; error?: string };
+    if (res?.ok) window.close(); // the card is in the page now
+    else setPostingMsg(`Could not open the log card: ${res?.error ?? 'unknown error'}`);
+  };
   const [postingMsg, setPostingMsg] = useState<string | null>(null);
   const savePosting = async () => {
     if (tabId == null) return;
@@ -80,6 +87,9 @@ function Popup() {
           <li><span className="dot r" /> {red} required, empty</li>
         </ul>
       )}
+      <button className="secondary" onClick={logPosting} disabled={tabId == null} title="Open the log card without filling anything. You don't have to have applied.">
+        Log posting only (no autofill)
+      </button>
       <button className="secondary" onClick={savePosting} disabled={tabId == null}>Save posting</button>
       {postingMsg && <p className="note">{postingMsg}</p>}
       {pending.length > 0 && (

@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
-import { fakeSheet, installSheetsStub, launchExtension, resetSheet, seed, setOnline, startServers, submitEvents, triggerFill, type Ext, type Servers } from './harness';
+import { fakeSheet, installSheetsStub, launchExtension, openLogPanel, resetSheet, seed, setOnline, startServers, submitEvents, triggerFill, type Ext, type Servers } from './harness';
 
 let servers: Servers;
 let ext: Ext;
@@ -182,6 +182,49 @@ test('an unresolved location blocks logging until the user picks one', async () 
   await card.getByLabel('Location').selectOption('canada');
   await expect(log).toBeEnabled();
   await page.close();
+});
+
+test('log a posting you have not applied to: card opens with nothing filled, and the row has an empty Status', async () => {
+  const page = await ext.context.newPage();
+  await page.goto(`${servers.main.origin}/generic/posting.html`); // a plain posting: no application form
+  await page.locator('#newsletter-email').fill(''); // a field that autofill WOULD have filled with the profile email
+  await openLogPanel(ext, page);
+
+  const panel = page.locator('#autofill-review-host .panel');
+  await expect(panel).toContainText("you don't need to have applied");
+  const card = panel.locator('.logcard');
+  await expect(card.getByLabel('Company')).toHaveValue('Globex');
+  await expect(card.getByLabel('Category')).toHaveValue('SWE');
+  await expect(card.getByLabel('Location')).toHaveValue('toronto');
+  await expect(card.getByLabel('Channel')).toHaveValue('website');
+  expect(await page.locator('#newsletter-email').inputValue()).toBe(''); // nothing was filled
+  expect((await fakeSheet(ext)).calls).toHaveLength(0); // and nothing logged until confirmed
+
+  await card.getByLabel('Also save the posting', { exact: false }).uncheck();
+  await card.getByRole('button', { name: 'Log application' }).click();
+  await expect(card).toContainText('Logged to your sheet');
+  const [row] = (await fakeSheet(ext)).rows;
+  expect(row).toEqual(['Globex', 'SWE', '', 'toronto', today(), 'website', '', `${servers.main.origin}/generic/posting.html`]);
+  expect(row![2]).toBe(''); // Status stays empty: logging does not mean you applied
+  expect(await submitEvents(page)).toEqual({ submit: 0, submitClick: 0 });
+  await page.close();
+});
+
+test('log-only on an application form fills nothing and highlights nothing', async () => {
+  const page = await ext.context.newPage();
+  await page.goto(`${servers.main.origin}/greenhouse/classic.html`);
+  await openLogPanel(ext, page);
+  await expect(page.locator('#autofill-review-host .logcard')).toBeVisible();
+  expect(await page.locator('#first_name').inputValue()).toBe('');
+  expect(await page.locator('#first_name').getAttribute('data-autofill-level')).toBeNull();
+  await page.close();
+});
+
+test('the popup offers the log-only action', async () => {
+  const popup = await ext.context.newPage();
+  await popup.goto(`chrome-extension://${ext.id}/popup.html`);
+  await expect(popup.getByRole('button', { name: 'Log posting only (no autofill)' })).toBeVisible();
+  await popup.close();
 });
 
 test('LinkedIn: logs and saves the posting but never fills', async () => {
