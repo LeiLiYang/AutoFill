@@ -67,9 +67,17 @@ export type FillStatus =
   | 'unmatched'
   | 'failed';
 
+/** How a free-text question gets answered, when it can be. */
+export type FreeTextResult =
+  | { kind: 'bank'; text: string; score: number }
+  | { kind: 'ai'; text: string }
+  | { kind: 'none'; reason: string };
+
 export interface FillOptions {
   overwrite: boolean;
   getFile: (kind: FileKind) => Promise<File | null>;
+  /** Answers open-ended questions (answer bank first, then the optional LLM). Absent = leave them empty. */
+  freeText?: (d: FieldDescriptor) => Promise<FreeTextResult>;
 }
 
 export interface FillResult {

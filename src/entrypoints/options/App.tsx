@@ -365,8 +365,11 @@ export function App() {
               </label>
             </div>
             <small className="hint">
-              The API key is only sent to api.anthropic.com for free-text answers, and is never
-              included in exports.
+              With a key set, an open-ended question that has no close saved answer is drafted by
+              Claude. Only that question, the job posting text, your name, links, education, work
+              history and a few of your saved answers are sent to api.anthropic.com: never your
+              contact details, address, salary or demographic answers. Without a key nothing is
+              sent and the field is left empty. The key is never included in exports.
             </small>
           </>,
         )}

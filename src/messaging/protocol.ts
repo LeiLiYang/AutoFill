@@ -47,6 +47,10 @@ export type ToBackground =
   | { type: 'save-posting'; tabId?: number }
   /** Sent only after the user confirms the log card. Nothing is ever logged automatically. */
   | { type: 'log-application'; entry: LogEntry; force?: boolean; alsoSavePosting?: boolean; tabId?: number }
+  /** Draft one free-text answer with the LLM (the only call that sends profile/posting text off-device). */
+  | { type: 'generate-answer'; question: string; maxLength?: number }
+  /** Remember this page's job description so a later form page (e.g. Workday /apply) can use it. */
+  | { type: 'cache-posting'; posting: ExtractedPosting }
   | { type: 'queue-retry'; id?: string; force?: boolean }
   | { type: 'queue-mark-synced'; id: string }
   | { type: 'queue-discard'; id: string };

@@ -9,6 +9,7 @@ import type {
 import { hasValue } from '../detect/descriptor';
 import { matchField } from '../detect/match';
 import { resolveValue } from '../detect/values';
+import { BANK_CONFIDENT } from '../llm/answerBank';
 import type { Profile } from '../profile/schema';
 
 /** Matches below this are listed for the user but never written into the form. */
@@ -20,6 +21,8 @@ export interface FillRun {
   reports: FieldReport[];
   /** id → descriptor, so the review panel can scroll to, highlight and re-read fields. */
   descriptors: Map<string, FieldDescriptor>;
+  /** id → text the model wrote, so a later edit by the user can be told apart from the draft. */
+  generated: Map<string, string>;
 }
 
 export interface RunFillInput {
@@ -39,6 +42,7 @@ export async function runFill({ adapter, ctx, profile, options }: RunFillInput):
   const fields = adapter.getFields(ctx);
   const reports: FieldReport[] = [];
   const descriptors = new Map<string, FieldDescriptor>();
+  const generated = new Map<string, string>();
 
   for (const d of fields) {
     descriptors.set(d.id, d);
@@ -56,8 +60,42 @@ export async function runFill({ adapter, ctx, profile, options }: RunFillInput):
       continue;
     }
     if (match.key === 'freeText') {
-      // Answer bank / LLM handling arrives in a later milestone.
-      report('unmatched', { key: match.key, confidence: match.confidence, detail: 'free-text question' });
+      const free = { key: match.key, confidence: match.confidence } as const;
+      if (!options.freeText) {
+        report('unmatched', { ...free, detail: 'free-text question' });
+        continue;
+      }
+      // Never spend an API call on a question the user already answered.
+      if (d.currentValue && !options.overwrite) {
+        report('skipped-existing', { ...free, valuePreview: preview(d.currentValue) });
+        continue;
+      }
+      try {
+        const answer = await options.freeText(d);
+        if (answer.kind === 'none') {
+          report('unmatched', { ...free, detail: answer.reason });
+          continue;
+        }
+        const result = await adapter.fill(d, { type: 'text', text: answer.text }, options);
+        if (result.status !== 'filled') {
+          report(result.status, { ...free, detail: result.detail });
+          continue;
+        }
+        if (answer.kind === 'ai') {
+          generated.set(d.id, answer.text);
+          report('ai', { ...free, valuePreview: preview(answer.text), detail: 'AI draft from your profile and posting: review before submitting' });
+        } else {
+          // A close match to a saved answer is trusted; a loose one is filled but flagged.
+          report(answer.score >= BANK_CONFIDENT ? 'filled' : 'low-confidence', {
+            key: match.key,
+            confidence: answer.score,
+            valuePreview: preview(answer.text),
+            detail: 'from your answer bank',
+          });
+        }
+      } catch (e) {
+        report('failed', { ...free, detail: (e as Error).message });
+      }
       continue;
     }
     if (match.confidence < MIN_FILL_CONFIDENCE) {
@@ -91,5 +129,5 @@ export async function runFill({ adapter, ctx, profile, options }: RunFillInput):
       report('failed', { key: match.key, confidence: match.confidence, detail: (e as Error).message });
     }
   }
-  return { reports, descriptors };
+  return { reports, descriptors, generated };
 }

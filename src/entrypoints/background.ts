@@ -1,4 +1,7 @@
 import { savePosting } from '../background/savePosting';
+import { sdkDeps, type AnswerResult, type ClaudeDeps } from '../llm/client';
+import { answerQuestion } from '../llm/answerQuestion';
+import { cachePosting, getCachedPosting } from '../posting/cache';
 import { getFile } from '../profile/files';
 import { chromeLocalStore } from '../profile/storage';
 import { loadProfile, loadSettings, saveProfile } from '../profile/store';
@@ -126,6 +129,33 @@ const ensureInjected = (tabId: number) =>
 
 const runSavePosting = (tabId: number) => savePosting(tabId, { ensureInjected, getFrames: getReports });
 
+/** The Anthropic client factory is swappable so end-to-end tests never call the real API. */
+let claudeFactory: (apiKey: string) => ClaudeDeps = sdkDeps;
+
+/** The job description for the page the form is on: from the page itself, else cached by canonical URL. */
+async function postingFor(tabId: number) {
+  const res = (await chrome.tabs.sendMessage(tabId, { type: 'extract-posting' } satisfies ToContent, { frameId: 0 }).catch(() => undefined)) as
+    | { posting: import('../messaging/protocol').ExtractedPosting }
+    | undefined;
+  const p = res?.posting;
+  if (!p) return null;
+  if (!p.formOnly && p.descriptionMd.length >= 200) return { title: p.title, company: p.company, descriptionMd: p.descriptionMd };
+  const cached = await getCachedPosting(chromeLocalStore, p.canonicalUrl);
+  return cached ?? { title: p.title, company: p.company };
+}
+
+function runGenerateAnswer(tabId: number | undefined, msg: Extract<ToBackground, { type: 'generate-answer' }>): Promise<AnswerResult> {
+  return answerQuestion(
+    {
+      loadProfile,
+      loadSettings,
+      getPosting: () => (tabId == null ? Promise.resolve(null) : postingFor(tabId)),
+      claude: (key) => claudeFactory(key),
+    },
+    { question: msg.question, maxLength: msg.maxLength },
+  );
+}
+
 /** The user confirmed the log card: write the row, and save the posting too if they ticked that. */
 async function runLog(tabId: number | undefined, msg: Extract<ToBackground, { type: 'log-application' }>): Promise<LogApplicationResponse> {
   const log = await logger.logApplication(msg.entry, { force: msg.force });
@@ -142,6 +172,7 @@ export default defineBackground(() => {
       triggerFill,
       savePosting: runSavePosting,
       setSheets: (deps: SheetsDeps) => (sheetsDeps = deps),
+      setClaude: (factory: (apiKey: string) => ClaudeDeps) => (claudeFactory = factory),
       retryQueue: (interactive = false) => logger.retryPending(interactive),
     };
   }
@@ -194,6 +225,16 @@ export default defineBackground(() => {
       }
       case 'log-application':
         runLog(tabId, msg).then(sendResponse);
+        return true;
+      case 'generate-answer':
+        runGenerateAnswer(tabId, msg).then(sendResponse);
+        return true;
+      case 'cache-posting':
+        cachePosting(chromeLocalStore, msg.posting.canonicalUrl, {
+          title: msg.posting.title,
+          company: msg.posting.company,
+          descriptionMd: msg.posting.descriptionMd,
+        }).then(() => sendResponse({ ok: true }));
         return true;
       case 'queue-retry': {
         const job = msg.id ? logger.retryOne(msg.id, { force: msg.force }) : logger.retryPending(true);

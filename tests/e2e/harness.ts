@@ -148,6 +148,38 @@ export async function savePosting(ext: Ext, page: Page): Promise<any> {
   }, url);
 }
 
+/** Merge fields into the stored settings (e.g. the API key). */
+export const patchSettings = (ext: Ext, patch: Record<string, unknown>) =>
+  ext.worker.evaluate(async (p) => {
+    const cur = (await chrome.storage.local.get('settings')).settings ?? {};
+    await chrome.storage.local.set({ settings: { ...cur, ...p } });
+  }, patch);
+
+export const setAnswerBank = (ext: Ext, bank: unknown[]) =>
+  ext.worker.evaluate(async (b) => {
+    const { profile } = await chrome.storage.local.get('profile');
+    await chrome.storage.local.set({ profile: { ...profile, answerBank: b } });
+  }, bank);
+
+/**
+ * Replace the Anthropic client with a fake that records every request in globalThis.__claudeCalls.
+ * `reply` is the text the "model" returns (or the stop reason, for refusals).
+ */
+export const installClaudeStub = (ext: Ext, reply: { text?: string; stop_reason?: string }) =>
+  ext.worker.evaluate((r) => {
+    const g = globalThis as any;
+    g.__claudeCalls = [];
+    g.__autofill.setClaude((apiKey: string) => ({
+      create: async (params: unknown) => {
+        g.__claudeCalls.push({ apiKey, params });
+        return { content: r.text ? [{ type: 'text', text: r.text }] : [], stop_reason: r.stop_reason ?? 'end_turn' };
+      },
+    }));
+  }, reply);
+
+export const claudeCalls = (ext: Ext) =>
+  ext.worker.evaluate(() => (globalThis as any).__claudeCalls as { apiKey: string; params: any }[]);
+
 /** Replace Google Sheets with an in-memory fake living in the service worker (state in globalThis.__fake). */
 export async function installSheetsStub(ext: Ext): Promise<void> {
   await ext.worker.evaluate(() => {

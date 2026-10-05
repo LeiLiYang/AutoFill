@@ -85,11 +85,14 @@ test('greenhouse form embedded in a cross-origin iframe', async () => {
   expect(await frame.locator('#email').inputValue()).toBe('ada@example.com');
   await expect.poll(() => frame.locator('#resume').evaluate((i: HTMLInputElement) => i.files?.[0]?.name)).toBe('ada-cv.pdf');
 
-  // The panel lives in the top frame and lists fields from the iframe.
+  // The earlier test saved an answer to the bank, so this run reuses it for the same question.
+  await expect.poll(() => frame.locator('#q_why').inputValue()).toBe('Because the mission resonates.');
+
+  // The panel lives in the top frame and lists fields from the iframe; clicking one scrolls to it there.
   const panel = page.locator('#autofill-review-host .panel');
-  await expect(panel).toContainText('Why do you want to work at Acme?');
-  await panel.locator('button.row', { hasText: 'Why do you want' }).click();
-  await expect(frame.locator('#q_why')).toBeFocused();
+  await expect(panel).toContainText('Cover Letter'); // no cover letter stored: flagged for the user
+  await panel.locator('button.row', { hasText: 'Cover Letter' }).click();
+  await expect(frame.locator('#cover_letter')).toBeFocused();
   expect(await submitEvents(page)).toEqual({ submit: 0, submitClick: 0 });
   await page.close();
 });

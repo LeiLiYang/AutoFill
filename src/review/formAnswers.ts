@@ -11,9 +11,14 @@ const SOURCE: Record<string, FormAnswer['source']> = {
 
 /**
  * Everything the form holds right now, with where each answer came from. Read live from the DOM
- * so edits the user made after the autofill are what gets recorded. File inputs list the file name.
+ * so edits the user made after the autofill are what gets recorded (an AI draft the user rewrote
+ * becomes "manual"). File inputs list the file name.
  */
-export function collectFormAnswers(descriptors: Map<string, FieldDescriptor>, reports: FieldReport[]): FormAnswer[] {
+export function collectFormAnswers(
+  descriptors: Map<string, FieldDescriptor>,
+  reports: FieldReport[],
+  generated: Map<string, string> = new Map(),
+): FormAnswer[] {
   const out: FormAnswer[] = [];
   for (const r of reports) {
     const d = descriptors.get(r.id);
@@ -23,7 +28,9 @@ export function collectFormAnswers(descriptors: Map<string, FieldDescriptor>, re
     const answer =
       d.kind === 'file' ? ((d.element as HTMLInputElement).files?.[0]?.name ?? '') : currentAnswerText(d);
     if (!answer) continue;
-    out.push({ question, answer, source: SOURCE[r.status] ?? 'manual' });
+    let source = SOURCE[r.status] ?? 'manual';
+    if (r.status === 'ai' && answer !== generated.get(r.id)) source = 'manual';
+    out.push({ question, answer, source });
   }
   return out;
 }
