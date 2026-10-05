@@ -1,8 +1,12 @@
 import { defineConfig } from 'wxt';
 
-// Public key pins the extension ID so the Google OAuth client keeps working for the
-// unpacked extension. Generate yours per README ("Pinned extension ID") and put it in .env.local.
-const key = process.env.WXT_EXTENSION_KEY;
+// The public key pins the extension ID (cihdjaikbfmejnlkcmncpggnjledlpoc) so the Google OAuth
+// client keeps working for the unpacked extension. A public key is not a secret: every packed
+// extension ships it in its manifest. The matching private key lives in the gitignored private/
+// folder (see scripts/gen-extension-key.mjs). Override with WXT_EXTENSION_KEY to use your own.
+const PINNED_PUBLIC_KEY =
+  'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAt+OB0FyRiJvgqfZCAJXhLmO2vTa8i7gYG2yZxPCY4/J1uBCipBYSEh+0Bvzhi7LBQGgplNqS2mlrUkpmQ+stqCDK7CQ4bzxqQ92tUaoVP1eJZ6b9qwNJHu5fVt/yFnJeHz6UVwgGpUgWEOyLofSHsXhA68C9Am4i6y9bphoDavzZY59HOIjzyl6M5Fga/LNtWoHTY67ydVrj7wrlj5ERdSO9Tux+GjB5r32CMlCRIpqpAPgZkjm5P/7oUeAhddSGCelmug/RpsvY9BZX2Ocv91NRVOMRNB+3Qu8b5MNc+NifDHqje+16rwfVsNVogyqCWS4hPgOlUy7HCN/hNVj29QIDAQAB';
+const key = process.env.WXT_EXTENSION_KEY || PINNED_PUBLIC_KEY;
 const clientId = process.env.WXT_OAUTH_CLIENT_ID ?? 'REPLACE_WITH_OAUTH_CLIENT_ID.apps.googleusercontent.com';
 
 export default defineConfig({

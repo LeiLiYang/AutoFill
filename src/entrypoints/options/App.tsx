@@ -11,13 +11,16 @@ import {
 import { loadProfile, loadSettings, saveProfile, saveSettings } from '../../profile/store';
 import { deleteFile, getFile, putFile } from '../../profile/files';
 import { exportBackup, importBackup } from '../../profile/importExport';
+import { pendingRows } from '../../tracking/localLog';
+import { queueAction, useRows } from '../../tracking/useRows';
 
-type Tab = 'profile' | 'history' | 'answers' | 'files' | 'settings' | 'backup';
+type Tab = 'profile' | 'history' | 'answers' | 'files' | 'applications' | 'settings' | 'backup';
 const TABS: [Tab, string][] = [
   ['profile', 'Contact & work'],
   ['history', 'Education & experience'],
   ['answers', 'Answer bank'],
   ['files', 'Resume'],
+  ['applications', 'Applications'],
   ['settings', 'Settings'],
   ['backup', 'Import / export'],
 ];
@@ -310,6 +313,8 @@ export function App() {
 
       {tab === 'files' && <Files flash={flash} />}
 
+      {tab === 'applications' && <Applications />}
+
       {tab === 'settings' &&
         group(
           'Integrations',
@@ -376,6 +381,61 @@ export function App() {
         </button>
       </div>
     </div>
+  );
+}
+
+const STATUS_LABEL = { synced: 'In sheet', pending: 'Queued', failed: 'Needs attention' } as const;
+
+/** Local copy of every logged row, with the retry queue made visible and actionable. */
+function Applications() {
+  const rows = useRows().slice().reverse();
+  const pending = pendingRows(rows);
+  return (
+    <fieldset>
+      <legend>Logged applications (local copy)</legend>
+      <div className="row">
+        <span>{rows.length} logged · {pending.length} not in the sheet yet</span>
+        {pending.length > 0 && (
+          <button className="ghost" onClick={() => queueAction({ type: 'queue-retry' })}>Retry all</button>
+        )}
+      </div>
+      <table className="apps">
+        <thead>
+          <tr><th>Date</th><th>Company</th><th>Cat.</th><th>Location</th><th>Channel</th><th>Status</th><th /></tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.id} className={r.status}>
+              <td>{r.entry.date}</td>
+              <td title={r.entry.url}>{r.entry.company}</td>
+              <td>{r.entry.category}</td>
+              <td>{r.entry.location}</td>
+              <td>{r.entry.channel}</td>
+              <td>
+                {STATUS_LABEL[r.status]}
+                {r.lastError && <small className="hint"> {r.lastError}</small>}
+              </td>
+              <td className="acts">
+                {r.status !== 'synced' && (
+                  <>
+                    {r.errorKind === 'duplicate' ? (
+                      <>
+                        <button className="ghost" onClick={() => queueAction({ type: 'queue-mark-synced', id: r.id })}>Already there</button>
+                        <button className="ghost" onClick={() => queueAction({ type: 'queue-retry', id: r.id, force: true })}>Append anyway</button>
+                      </>
+                    ) : (
+                      <button className="ghost" onClick={() => queueAction({ type: 'queue-retry', id: r.id })}>Retry</button>
+                    )}
+                    <button className="danger" onClick={() => queueAction({ type: 'queue-discard', id: r.id })}>Discard</button>
+                  </>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {rows.length === 0 && <small className="hint">Nothing logged yet. Rows appear here after you confirm the log card.</small>}
+    </fieldset>
   );
 }
 

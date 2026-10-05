@@ -22,6 +22,10 @@ button.ghost { background: #fff; border: 1px solid #c8ccd2; border-radius: 6px; 
 .msg { font-size: 13px; }
 .msg.err { color: #b3261e; } .msg.ok { color: #1e7e34; }
 small.hint { color: #666; }
+table.apps { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 8px; }
+table.apps th, table.apps td { text-align: left; padding: 5px 6px; border-bottom: 1px solid #dde0e5; vertical-align: top; }
+table.apps tr.pending td:nth-child(6) { color: #b06000; } table.apps tr.failed td:nth-child(6) { color: #b3261e; }
+table.apps .acts { white-space: nowrap; display: flex; gap: 4px; }
 @media (prefers-color-scheme: dark) {
   :root { color: #e8e8e8; background: #16181c; }
   fieldset, .savebar, nav button, input, select, textarea, button.ghost, button.danger { background: #1f2227; color: #e8e8e8; border-color: #3a3f47; }

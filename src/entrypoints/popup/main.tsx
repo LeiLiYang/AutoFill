@@ -3,6 +3,8 @@ import ReactDOM from 'react-dom/client';
 import type { FieldReport } from '../../adapters/types';
 import { reportsKey, type FrameReport, type SavePostingResult, type ToBackground } from '../../messaging/protocol';
 import { loadSettings, saveSettings } from '../../profile/store';
+import { pendingRows } from '../../tracking/localLog';
+import { queueAction, useRows } from '../../tracking/useRows';
 import './style.css';
 
 function Popup() {
@@ -35,6 +37,13 @@ function Popup() {
     setBusy(false);
   };
 
+  const pending = pendingRows(useRows());
+  const [retrying, setRetrying] = useState(false);
+  const retryAll = async () => {
+    setRetrying(true);
+    await queueAction({ type: 'queue-retry' });
+    setRetrying(false);
+  };
   const [postingMsg, setPostingMsg] = useState<string | null>(null);
   const savePosting = async () => {
     if (tabId == null) return;
@@ -73,6 +82,19 @@ function Popup() {
       )}
       <button className="secondary" onClick={savePosting} disabled={tabId == null}>Save posting</button>
       {postingMsg && <p className="note">{postingMsg}</p>}
+      {pending.length > 0 && (
+        <div className="pending" role="status">
+          <strong>{pending.length} row{pending.length === 1 ? '' : 's'} not in your sheet yet</strong>
+          <ul>
+            {pending.slice(0, 4).map((r) => (
+              <li key={r.id}>
+                {r.entry.company} <span className="why">{r.lastError ?? 'queued'}</span>
+              </li>
+            ))}
+          </ul>
+          <button className="secondary" onClick={retryAll} disabled={retrying}>{retrying ? 'Retrying…' : 'Retry now'}</button>
+        </div>
+      )}
       <p className="note">Never submits. Review the form, then click Submit yourself.</p>
       <a href="#" onClick={(e) => { e.preventDefault(); chrome.runtime.openOptionsPage(); }}>Profile &amp; settings</a>
     </div>

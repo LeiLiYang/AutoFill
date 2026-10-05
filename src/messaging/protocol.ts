@@ -2,8 +2,16 @@ import type { FieldReport } from '../adapters/types';
 import type { ExtractedPosting } from '../posting/extract';
 import type { FormAnswer, SavePostingResult } from '../posting/save';
 import type { FileKind } from '../profile/schema';
+import type { LogResult } from '../tracking/queue';
+import type { LogEntry } from '../tracking/row';
 
-export type { ExtractedPosting, FormAnswer, SavePostingResult };
+export type { ExtractedPosting, FormAnswer, SavePostingResult, LogResult };
+
+export interface LogApplicationResponse {
+  log: LogResult;
+  /** Present when "also save posting" was ticked and the log succeeded. */
+  save?: SavePostingResult;
+}
 
 export interface CapturedAnswer {
   question: string;
@@ -36,7 +44,12 @@ export type ToBackground =
   | { type: 'focus-field'; frameId: number; fieldId: string }
   | { type: 'save-answers' }
   /** From the panel (sender.tab) or the popup (tabId). */
-  | { type: 'save-posting'; tabId?: number };
+  | { type: 'save-posting'; tabId?: number }
+  /** Sent only after the user confirms the log card. Nothing is ever logged automatically. */
+  | { type: 'log-application'; entry: LogEntry; force?: boolean; alsoSavePosting?: boolean; tabId?: number }
+  | { type: 'queue-retry'; id?: string; force?: boolean }
+  | { type: 'queue-mark-synced'; id: string }
+  | { type: 'queue-discard'; id: string };
 
 /** Background ↔ offscreen document (blob URLs for large downloads). */
 export type ToOffscreen =

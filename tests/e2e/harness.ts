@@ -111,7 +111,7 @@ export async function seed(ext: Ext, profile: Profile = e2eProfile()): Promise<v
   const page = await ext.context.newPage();
   await page.goto(`chrome-extension://${ext.id}/options.html`);
   await page.evaluate(async (profileJson) => {
-    await chrome.storage.local.set({ profile: profileJson, settings: { sheetId: '', tabName: 'Sheet1', anthropicApiKey: '', model: 'claude-opus-5-5', overwrite: false } });
+    await chrome.storage.local.set({ profile: profileJson, loggedRows: [], settings: { sheetId: 'test-sheet', tabName: 'Sheet1', anthropicApiKey: '', model: 'claude-opus-5-5', overwrite: false } });
     await new Promise<void>((resolve, reject) => {
       const open = indexedDB.open('autofill-files', 1);
       open.onupgradeneeded = () => open.result.createObjectStore('files', { keyPath: 'kind' });
@@ -144,6 +144,40 @@ export async function savePosting(ext: Ext, page: Page): Promise<any> {
     return (globalThis as any).__autofill.savePosting(tab.id);
   }, url);
 }
+
+/** Replace Google Sheets with an in-memory fake living in the service worker (state in globalThis.__fake). */
+export async function installSheetsStub(ext: Ext): Promise<void> {
+  await ext.worker.evaluate(() => {
+    const g = globalThis as any;
+    g.__fake = { online: true, rows: [] as string[][], calls: [] as unknown[] };
+    g.__autofill.setSheets({
+      getToken: async () => 'test-token',
+      invalidateToken: async () => {},
+      fetch: async (url: string, init?: RequestInit) => {
+        const f = g.__fake;
+        const method = init?.method ?? 'GET';
+        f.calls.push({ method, url, body: init?.body ? JSON.parse(String(init.body)) : undefined });
+        if (!f.online) throw new TypeError('Failed to fetch');
+        if (method === 'GET') return new Response(JSON.stringify({ values: f.rows.map((r: string[]) => [r[7] ?? '']) }), { status: 200 });
+        f.rows.push(JSON.parse(String(init!.body)).values[0]);
+        return new Response('{}', { status: 200 });
+      },
+    });
+  });
+}
+
+export const fakeSheet = (ext: Ext) =>
+  ext.worker.evaluate(() => (globalThis as any).__fake as { online: boolean; rows: string[][]; calls: { method: string; url: string; body?: any }[] });
+
+export const setOnline = (ext: Ext, online: boolean) => ext.worker.evaluate((o) => void ((globalThis as any).__fake.online = o), online);
+
+export const resetSheet = (ext: Ext) =>
+  ext.worker.evaluate(async () => {
+    (globalThis as any).__fake.rows = [];
+    (globalThis as any).__fake.calls = [];
+    (globalThis as any).__fake.online = true;
+    await chrome.storage.local.set({ loggedRows: [] });
+  });
 
 export async function submitEvents(page: Page): Promise<{ submit: number; submitClick: number }> {
   let total = { submit: 0, submitClick: 0 };

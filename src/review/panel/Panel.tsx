@@ -1,14 +1,22 @@
 import { useState } from 'react';
 import type { FieldReport } from '../../adapters/types';
-import type { FrameReport, SavePostingResult } from '../../messaging/protocol';
+import type { FrameReport, LogApplicationResponse, SavePostingResult } from '../../messaging/protocol';
+import type { LogPrefill } from '../../tracking/prefill';
+import type { LogEntry } from '../../tracking/row';
 import { levelFor, type Level } from '../highlight';
+import { LogCard } from './LogCard';
 
 export interface PanelProps {
   frames: FrameReport[];
   filling: boolean;
+  /** LinkedIn: the extension never autofills there; the panel only logs and saves the posting. */
+  logOnly?: boolean;
+  /** Null until the page has been read. */
+  prefill?: LogPrefill | null;
   onScroll: (frameId: number, fieldId: string) => void;
   onSaveAnswers: () => Promise<number>;
   onSavePosting: () => Promise<SavePostingResult>;
+  onLog?: (entry: LogEntry, force: boolean, alsoSavePosting: boolean) => Promise<LogApplicationResponse>;
   onClose: () => void;
 }
 
@@ -28,7 +36,7 @@ const STATUS_TEXT: Record<string, string> = {
   failed: 'could not fill',
 };
 
-export function Panel({ frames, filling, onScroll, onSaveAnswers, onSavePosting, onClose }: PanelProps) {
+export function Panel({ frames, filling, logOnly, prefill, onScroll, onSaveAnswers, onSavePosting, onLog, onClose }: PanelProps) {
   const [saved, setSaved] = useState<string | null>(null);
   const [showOther, setShowOther] = useState(false);
   const [posting, setPosting] = useState<SavePostingResult | 'saving' | null>(null);
@@ -70,11 +78,15 @@ export function Panel({ frames, filling, onScroll, onSaveAnswers, onSavePosting,
 
       {filling && <p className="note">Filling…</p>}
 
-      <div className="counts">
-        <span className="chip g">{green.length} filled</span>
-        <span className="chip y">{yellow.length} review</span>
-        <span className="chip r">{red.length} required empty</span>
-      </div>
+      {logOnly ? (
+        <p className="note">Autofill is off on LinkedIn. You can still log this application and save the posting.</p>
+      ) : (
+        <div className="counts">
+          <span className="chip g">{green.length} filled</span>
+          <span className="chip y">{yellow.length} review</span>
+          <span className="chip r">{red.length} required empty</span>
+        </div>
+      )}
 
       {red.length > 0 && (
         <section>
@@ -99,8 +111,10 @@ export function Panel({ frames, filling, onScroll, onSaveAnswers, onSavePosting,
         </section>
       )}
 
+      {prefill && onLog && <LogCard prefill={prefill} onLog={onLog} />}
+
       <footer>
-        <button className="action" onClick={save}>Save my answers to answer bank</button>
+        {!logOnly && <button className="action" onClick={save}>Save my answers to answer bank</button>}
         {saved && <p className="note" role="status">{saved}</p>}
         <button className="action secondary" onClick={savePosting} disabled={posting === 'saving'}>
           {posting === 'saving' ? 'Saving posting…' : 'Save posting'}

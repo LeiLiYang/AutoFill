@@ -1,14 +1,24 @@
+import { isLinkedIn } from '../adapters/linkedin';
 import { pickAdapter } from '../adapters/registry';
 import type { FieldDescriptor } from '../adapters/types';
 import { runFill } from '../fill/engine';
-import type { FileMessage, FrameReport, SavePostingResult, ToBackground, ToContent } from '../messaging/protocol';
+import type {
+  FileMessage,
+  FrameReport,
+  LogApplicationResponse,
+  SavePostingResult,
+  ToBackground,
+  ToContent,
+} from '../messaging/protocol';
 import { extractPosting } from '../posting/extract';
+import { buildLogPrefill, detectChannel, type LogPrefill } from '../tracking/prefill';
 import type { FileKind } from '../profile/schema';
 import { loadProfile } from '../profile/store';
 import { base64ToBytes } from '../util/base64';
 import { captureAnswers } from '../review/capture';
 import { collectFormAnswers } from '../review/formAnswers';
 import { clearHighlights, highlight, levelFor, scrollToField } from '../review/highlight';
+import type { PanelProps } from '../review/panel/Panel';
 import { mountPanel, type PanelHandle } from '../review/panel/mountPanel';
 
 /**
@@ -30,6 +40,8 @@ export default defineContentScript({
     let panel: PanelHandle | null = null;
     let frames: FrameReport[] = [];
     let filling = false;
+    let logOnly = false;
+    let prefill: LogPrefill | null = null;
 
     const send = <T = unknown>(msg: ToBackground) => chrome.runtime.sendMessage(msg) as Promise<T>;
 
@@ -43,9 +55,14 @@ export default defineContentScript({
       const props = {
         frames,
         filling,
+        logOnly,
+        prefill,
         onScroll: (frameId: number, fieldId: string) => void send({ type: 'focus-field', frameId, fieldId }),
         onSaveAnswers: async () => (await send<{ saved: number }>({ type: 'save-answers' }))?.saved ?? 0,
         onSavePosting: () => send<SavePostingResult>({ type: 'save-posting' }),
+        // Reached only from the user's click on the log card's confirm button.
+        onLog: (entry: Parameters<NonNullable<PanelProps['onLog']>>[0], force: boolean, alsoSavePosting: boolean) =>
+          send<LogApplicationResponse>({ type: 'log-application', entry, force, alsoSavePosting }),
         onClose: () => {
           panel?.unmount();
           panel = null;
@@ -56,15 +73,38 @@ export default defineContentScript({
       else panel = mountPanel(document, props);
     }
 
+    function computePrefill(): LogPrefill | null {
+      try {
+        const url = new URL(location.href);
+        return buildLogPrefill(extractPosting(document, url), detectChannel(url, document));
+      } catch {
+        return null; // the card then simply does not appear; filling is unaffected
+      }
+    }
+
     async function run(overwrite: boolean) {
       clearHighlights();
+      const url = new URL(location.href);
+      if (isLinkedIn(url)) {
+        // LinkedIn: log and save the posting only. Never fill there.
+        if (isTop) {
+          logOnly = true;
+          filling = false;
+          frames = [];
+          prefill = computePrefill();
+          renderPanel();
+        }
+        return;
+      }
       if (isTop) {
+        logOnly = false;
         frames = [];
         filling = true;
+        prefill = computePrefill();
         renderPanel();
       }
       const profile = await loadProfile();
-      const ctx = { doc: document, url: new URL(location.href), isTopFrame: isTop };
+      const ctx = { doc: document, url, isTopFrame: isTop };
       const adapter = pickAdapter(ctx);
       const result = await runFill({ adapter, ctx, profile, options: { overwrite, getFile } });
       descriptors = result.descriptors;

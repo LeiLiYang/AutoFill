@@ -8,6 +8,7 @@
     "build": "wxt build",
     "build:test": "wxt build --mode test",
     "postinstall": "wxt prepare",
+    "keygen": "node scripts/gen-extension-key.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run",

@@ -53,7 +53,9 @@ function companyFromJsonLd(doc: Document): string | null {
 function companyFromMetadata(doc: Document): string | null {
   const ld = companyFromJsonLd(doc);
   if (ld) return ld;
-  const sel = doc.querySelector('.company-name, [data-qa="company-name"], [class*="company-name" i]');
+  const sel = doc.querySelector(
+    '.company-name, [data-qa="company-name"], [class*="company-name" i], .job-details-jobs-unified-top-card__company-name, .topcard__org-name-link',
+  );
   if (sel?.textContent?.trim()) return sel.textContent.trim();
   const og = doc.querySelector('meta[property="og:site_name"]')?.getAttribute('content');
   if (og?.trim()) return og.trim();

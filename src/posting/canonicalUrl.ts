@@ -57,7 +57,10 @@ export function canonicalPostingUrl(input: string): string {
   const mapped = postingPath(host, u.pathname, params);
   for (const key of [...params.keys()]) if (isTracking(key)) params.delete(key);
 
-  const out = new URL(`https://${mapped.host ?? host}${mapped.path}`);
+  // Known ATS hosts are https-only, so upgrade for stable duplicate matching; keep other sites as given.
+  const knownAts = /(^|\.)(greenhouse\.io|lever\.co|ashbyhq\.com|myworkdayjobs\.com|linkedin\.com)$/.test(host);
+  const scheme = knownAts ? 'https:' : u.protocol;
+  const out = new URL(`${scheme}//${mapped.host ?? host}${u.port ? `:${u.port}` : ''}${mapped.path}`);
   out.search = params.toString();
   out.pathname = out.pathname.replace(/\/+$/, '') || '/';
   return out.toString().replace(/\/$/, out.search ? '/' : '');
