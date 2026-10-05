@@ -33,6 +33,14 @@ export class FakeSheets {
       const auth = (init?.headers as Record<string, string>)?.Authorization?.replace('Bearer ', '');
       if (!auth || !this.validTokens.has(auth)) return json(401, { error: { message: 'Invalid Credentials' } });
       if (this.status) return json(this.status, { error: { message: `forced ${this.status}` } });
+      if (method === 'GET' && url.includes('E%3AE')) {
+        // Serial numbers, as UNFORMATTED_VALUE returns them; blank date cells come back empty.
+        const serial = (s: string) => {
+          const m = /^(\d{4})\/(\d{2})\/(\d{2})$/.exec(s);
+          return m ? Date.UTC(+m[1]!, +m[2]! - 1, +m[3]!) / 86400000 + 25569 : s;
+        };
+        return json(200, { values: this.rows.map((r) => (r[4] ? [serial(r[4])] : [])) });
+      }
       if (method === 'GET') return json(200, { values: this.rows.map((r) => [r[7] ?? '']) });
       this.rows.push(body.values[0]);
       if (this.dropNextAppendResponse) {

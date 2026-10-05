@@ -89,8 +89,38 @@ export function findDuplicateRows(column: string[], url: string): number[] {
   return rows;
 }
 
-/** Append one row. USER_ENTERED so Sheets parses 2026/10/04 as a date, exactly as if typed. */
+/** Days since 1899-12-30, how Sheets numbers dates; null if `s` is not YYYY/MM/DD (or YYYY-MM-DD). */
+function dateSerial(s: string): number | null {
+  const m = /^(\d{4})[/-](\d{1,2})[/-](\d{1,2})$/.exec(s.trim());
+  return m ? Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])) / 86400000 + 25569 : null;
+}
+
+/** True when the last dated row in column E is already `date`, so the new row can leave its date blank. */
+async function sameDateAsLastRow(deps: SheetsDeps, sheetId: string, tab: string, date: string, interactive: boolean): Promise<boolean> {
+  const target = dateSerial(date);
+  if (target === null) return false;
+  try {
+    const data = await call(
+      deps,
+      interactive,
+      `${API}/${encodeURIComponent(sheetId)}/values/${a1(tab, 'E:E')}?valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=SERIAL_NUMBER`,
+    );
+    const cells = ((data.values ?? []) as unknown[][]).map((r) => r[0]);
+    const last = [...cells].reverse().find((c) => c !== undefined && c !== '');
+    const serial = typeof last === 'number' ? last : typeof last === 'string' ? dateSerial(last) : null;
+    return serial === target;
+  } catch {
+    return false; // can't tell: keep the date rather than risk losing it
+  }
+}
+
+/**
+ * Append one row. USER_ENTERED so Sheets parses 2026/10/04 as a date, exactly as if typed.
+ * The date (column E) is only written for the first entry of a day; later entries leave it blank,
+ * since the sheet reads as "everything below a date was applied on that date".
+ */
 export async function appendRow(deps: SheetsDeps, sheetId: string, tab: string, row: string[], interactive = true): Promise<void> {
+  if (row[4] && (await sameDateAsLastRow(deps, sheetId, tab, row[4], interactive))) row = row.map((c, i) => (i === 4 ? '' : c));
   const url =
     `${API}/${encodeURIComponent(sheetId)}/values/${a1(tab, 'A:H')}:append` +
     '?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS';

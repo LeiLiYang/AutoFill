@@ -15,7 +15,7 @@ describe('appendRow', () => {
     const s = new FakeSheets();
     const row = ['Acme', 'SWE', '', 'montreal', '2026/10/04', 'website', '', 'https://x.test/1'];
     await appendRow(s.deps, 'sheet123', 'Sheet1', row);
-    const call = s.calls[0]!;
+    const call = s.calls.find((c) => c.method === 'POST')!;
     expect(call.method).toBe('POST');
     expect(call.url).toContain('/spreadsheets/sheet123/values/');
     expect(decodeURIComponent(call.url)).toContain("'Sheet1'!A:H:append");
@@ -23,6 +23,27 @@ describe('appendRow', () => {
     expect(call.url).toContain('insertDataOption=INSERT_ROWS');
     expect(call.body).toEqual({ values: [row] });
     expect(s.rows).toEqual([row]);
+  });
+});
+
+describe('appendRow date column', () => {
+  const mk = (date: string, n = 1) => ['Acme', 'SWE', '', 'montreal', date, 'website', '', `https://x.test/${n}`];
+
+  it('writes the date for the first entry of a day, then leaves it blank for the rest', async () => {
+    const s = new FakeSheets();
+    await appendRow(s.deps, 'id', 'Sheet1', mk('2026/10/05', 1));
+    await appendRow(s.deps, 'id', 'Sheet1', mk('2026/10/05', 2));
+    await appendRow(s.deps, 'id', 'Sheet1', mk('2026/10/05', 3));
+    expect(s.rows.map((r) => r[4])).toEqual(['2026/10/05', '', '']);
+    expect(s.rows[1]![7]).toBe('https://x.test/2');
+  });
+
+  it('writes the date again when the day changes, and compares against the last dated row', async () => {
+    const s = new FakeSheets();
+    s.rows = [mk('2026/10/04'), mk('', 9)];
+    await appendRow(s.deps, 'id', 'Sheet1', mk('2026/10/04', 2));
+    await appendRow(s.deps, 'id', 'Sheet1', mk('2026/10/05', 3));
+    expect(s.rows.map((r) => r[4])).toEqual(['2026/10/04', '', '', '2026/10/05']);
   });
 });
 
