@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { FieldReport } from '../../adapters/types';
-import type { FrameReport, LogApplicationResponse, SavePostingResult } from '../../messaging/protocol';
+import type { FrameReport, LogApplicationResponse, SaveAnswersResult, SavePostingResult } from '../../messaging/protocol';
 import type { LogPrefill } from '../../tracking/prefill';
 import type { LogEntry } from '../../tracking/row';
 import { levelFor, type Level } from '../highlight';
@@ -14,7 +14,7 @@ export interface PanelProps {
   /** Null until the page has been read. */
   prefill?: LogPrefill | null;
   onScroll: (frameId: number, fieldId: string) => void;
-  onSaveAnswers: () => Promise<number>;
+  onSaveAnswers: () => Promise<SaveAnswersResult>;
   onSavePosting: () => Promise<SavePostingResult>;
   onLog?: (entry: LogEntry, force: boolean, alsoSavePosting: boolean) => Promise<LogApplicationResponse>;
   onClose: () => void;
@@ -45,6 +45,22 @@ function reasonFor(r: FieldReport): string {
   return specific ? r.detail! : (STATUS_TEXT[r.status] ?? r.status);
 }
 
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+/** Say what happened when "Save my answers" runs, including why nothing was saved. */
+export function describeSave(r: SaveAnswersResult): string {
+  if (r.saved > 0) return `Saved ${plural(r.saved, 'answer')} to your answer bank.`;
+  if (r.found > 0) return `Found ${plural(r.found, 'answer')}, already in your answer bank unchanged.`;
+  if (r.unreachable > 0 && r.scanned === 0) {
+    return "Couldn't read the form. Reload the page, click Fill again, answer the questions, then save.";
+  }
+  return (
+    `No hand-written answers found (looked at ${plural(r.scanned, 'field')}). ` +
+    'Type your own answers into questions the extension left empty, then click again. ' +
+    'Name, email, address and other profile fields are not saved as answers.'
+  );
+}
+
 export function Panel({ frames, filling, logOnly, prefill, onScroll, onSaveAnswers, onSavePosting, onLog, onClose }: PanelProps) {
   const [saved, setSaved] = useState<string | null>(null);
   const [showOther, setShowOther] = useState(false);
@@ -63,10 +79,28 @@ export function Panel({ frames, filling, logOnly, prefill, onScroll, onSaveAnswe
   const green = rows.filter((r) => r.level === 'green');
   const other = rows.filter((r) => r.level === null && r.report.status !== 'skipped-existing');
 
+  const saveNote = useRef<HTMLParagraphElement>(null);
+  const [savingAnswers, setSavingAnswers] = useState(false);
   const save = async () => {
-    const n = await onSaveAnswers();
-    setSaved(n ? `Saved ${n} answer${n === 1 ? '' : 's'} to your answer bank.` : 'No new manual answers to save.');
+    setSavingAnswers(true);
+    setSaved(null);
+    try {
+      setSaved(describeSave(await onSaveAnswers()));
+    } catch (e) {
+      setSaved(`Could not save: ${(e as Error).message}`);
+    } finally {
+      setSavingAnswers(false);
+    }
   };
+  // The panel scrolls; make sure the outcome is actually on screen.
+  useEffect(() => {
+    // Purely cosmetic: an error here must never blank the panel.
+    try {
+      if (saved) saveNote.current?.scrollIntoView?.({ block: 'nearest' });
+    } catch {
+      /* ignore */
+    }
+  }, [saved]);
 
   const list = (items: Row[], cls: string) =>
     items.map(({ frameId, report }) => (
@@ -123,8 +157,12 @@ export function Panel({ frames, filling, logOnly, prefill, onScroll, onSaveAnswe
       {prefill && onLog && <LogCard prefill={prefill} onLog={onLog} />}
 
       <footer>
-        {!logOnly && <button className="action" onClick={save}>Save my answers to answer bank</button>}
-        {saved && <p className="note" role="status">{saved}</p>}
+        {!logOnly && (
+          <button className="action" onClick={save} disabled={savingAnswers}>
+            {savingAnswers ? 'Saving…' : 'Save my answers to answer bank'}
+          </button>
+        )}
+        {saved && <p className="note save-note" role="status" ref={saveNote}>{saved}</p>}
         <button className="action secondary" onClick={savePosting} disabled={posting === 'saving'}>
           {posting === 'saving' ? 'Saving posting…' : 'Save posting'}
         </button>

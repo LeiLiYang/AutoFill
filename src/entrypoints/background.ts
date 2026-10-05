@@ -13,6 +13,7 @@ import {
   type FileMessage,
   type FrameReport,
   type LogApplicationResponse,
+  type SaveAnswersResult,
   type TestSheetsResult,
   type ToBackground,
   type ToContent,
@@ -92,6 +93,24 @@ function storeFrameReport(tabId: number, frameId: number, report: FrameReport) {
   });
 }
 
+/**
+ * Frames of the tab that have the extension running. A wizard step can appear in a frame that had no
+ * fields at the last fill, so ask the tab itself, falling back to the frames that reported earlier.
+ */
+async function framesWithExtension(tabId: number): Promise<number[]> {
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId, allFrames: true },
+      func: () => (window as unknown as { __autofillInstalled?: boolean }).__autofillInstalled === true,
+    });
+    const ids = results.filter((r) => r.result === true).map((r) => r.frameId);
+    if (ids.length) return ids;
+  } catch {
+    /* fall through to the frames we already know about */
+  }
+  return (await getReports(tabId)).map((f) => f.frameId).filter((id): id is number => id != null);
+}
+
 /** Add or update answer-bank entries; the same normalized question updates in place. */
 async function saveAnswers(answers: CapturedAnswer[]): Promise<number> {
   const profile = await loadProfile();
@@ -113,15 +132,25 @@ async function saveAnswers(answers: CapturedAnswer[]): Promise<number> {
   return changed;
 }
 
-async function collectAndSaveAnswers(tabId: number): Promise<number> {
+async function collectAndSaveAnswers(tabId: number): Promise<SaveAnswersResult> {
   const collected: CapturedAnswer[] = [];
-  for (const f of await getReports(tabId)) {
-    if (f.frameId == null) continue;
+  let scanned = 0;
+  let unreachable = 0;
+  const frameIds = await framesWithExtension(tabId);
+  for (const frameId of frameIds) {
     const msg: ToContent = { type: 'collect-answers' };
-    const res = (await chrome.tabs.sendMessage(tabId, msg, { frameId: f.frameId }).catch(() => null)) as { answers: CapturedAnswer[] } | null;
-    collected.push(...(res?.answers ?? []));
+    const res = (await chrome.tabs.sendMessage(tabId, msg, { frameId }).catch(() => null)) as { answers: CapturedAnswer[]; scanned: number } | null;
+    if (!res) {
+      unreachable++;
+      continue;
+    }
+    collected.push(...res.answers);
+    scanned += res.scanned;
   }
-  return saveAnswers(collected);
+  if (!frameIds.length) unreachable = 1;
+  // The same question can appear in more than one frame or step: keep the last answer given.
+  const unique = [...new Map(collected.map((a) => [normalize(a.question), a])).values()];
+  return { saved: await saveAnswers(unique), found: unique.length, scanned, unreachable };
 }
 
 /** Inject the content script into the top frame only (idempotent: it guards against double install). */
@@ -237,7 +266,7 @@ export default defineBackground(() => {
         return;
       case 'save-answers':
         if (tabId == null) return;
-        collectAndSaveAnswers(tabId).then((saved) => sendResponse({ saved }), () => sendResponse({ saved: 0 }));
+        collectAndSaveAnswers(tabId).then(sendResponse, () => sendResponse({ saved: 0, found: 0, scanned: 0, unreachable: 1 } satisfies SaveAnswersResult));
         return true;
       case 'save-posting': {
         const target = msg.tabId ?? tabId;

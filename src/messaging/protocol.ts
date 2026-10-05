@@ -7,6 +7,18 @@ import type { LogEntry } from '../tracking/row';
 
 export type { ExtractedPosting, FormAnswer, SavePostingResult, LogResult };
 
+/** Outcome of "Save my answers to answer bank", with enough detail to explain an empty result. */
+export interface SaveAnswersResult {
+  /** New or changed entries written to the answer bank. */
+  saved: number;
+  /** Hand-written answers found on the page (some may already be in the bank unchanged). */
+  found: number;
+  /** Form fields looked at. */
+  scanned: number;
+  /** Frames that could not be read (closed, navigated away, or not injected). */
+  unreachable: number;
+}
+
 export type TestSheetsResult = { ok: true; rows: number } | { ok: false; message: string };
 
 export interface LogApplicationResponse {

@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { greenhouseAdapter } from '../../../src/adapters/greenhouse';
 import { leverAdapter } from '../../../src/adapters/lever';
 import { pickAdapter } from '../../../src/adapters/registry';
-import { captureAnswers } from '../../../src/review/capture';
-import { fillWith, loadFixture } from '../fixtures';
+import { genericAdapter } from '../../../src/adapters/generic';
+import { runFill } from '../../../src/fill/engine';
+import { capturedNow, fillWith, formAnswersNow, loadFixture, testProfile } from '../fixtures';
+import { mount } from '../helpers';
 
 const ctx = (url: string) => ({ doc: document, url: new URL(url), isTopFrame: true });
 const val = (sel: string) => (document.querySelector(sel) as HTMLInputElement).value;
@@ -109,16 +111,55 @@ describe('Lever adapter', () => {
 describe('captureAnswers', () => {
   it('captures only fields the user answered manually after the run', async () => {
     loadFixture('greenhouse/classic.html');
-    const { reports, descriptors } = await fillWith(greenhouseAdapter, 'https://boards.greenhouse.io/acme/jobs/123');
+    const run = await fillWith(greenhouseAdapter, 'https://boards.greenhouse.io/acme/jobs/123');
 
-    expect(captureAnswers(descriptors, reports)).toEqual([]);
+    expect(capturedNow(greenhouseAdapter, run).answers).toEqual([]);
 
     (document.querySelector('#q_why') as HTMLTextAreaElement).value = 'Because the mission resonates.';
     (document.querySelector('#q_edu') as HTMLInputElement).value = 'Functional';
-    const captured = captureAnswers(descriptors, reports);
-    expect(captured).toEqual([
+    const captured = capturedNow(greenhouseAdapter, run);
+    expect(captured.answers).toEqual([
       { question: 'Why do you want to work at Acme?', answer: 'Because the mission resonates.' },
       { question: 'What is your favorite programming paradigm?', answer: 'Functional' },
     ]);
+    expect(captured.scanned).toBeGreaterThan(10); // reports what it looked at, so an empty result can be explained
+  });
+
+  it('does not save profile fields the user typed by hand (an address is not a question)', async () => {
+    mount('<label for="a">Address Line 1</label><input id="a"><label for="q">Why do you want to work here?</label><textarea id="q"></textarea>');
+    const run = await fillWith(genericAdapter, 'https://example.com/apply'); // profile has no street address
+    (document.getElementById('a') as HTMLInputElement).value = '1 Main Street';
+    (document.getElementById('q') as HTMLTextAreaElement).value = 'Because it is a good fit for my skills.';
+    expect(capturedNow(genericAdapter, run).answers.map((a) => a.question)).toEqual(['Why do you want to work here?']);
+  });
+
+  it('finds answers on a wizard step that appeared after the last fill', async () => {
+    mount('<div id="s1"><label for="a">First Name</label><input id="a"></div>');
+    const run = await fillWith(genericAdapter, 'https://example.com/apply');
+    // the page moves on to a new step the extension never scanned
+    document.body.insertAdjacentHTML('beforeend', '<div id="s2"><label for="q">Tell us about a project you are proud of</label><textarea id="q"></textarea></div>');
+    (document.getElementById('q') as HTMLTextAreaElement).value = 'I built a small compiler.';
+    expect(capturedNow(genericAdapter, run).answers).toEqual([{ question: 'Tell us about a project you are proud of', answer: 'I built a small compiler.' }]);
+  });
+
+  it('does not save values the extension itself filled', async () => {
+    mount('<label for="a">Why do you want to work here?</label><textarea id="a"></textarea>');
+    const run = await runFill({
+      adapter: genericAdapter,
+      ctx: { doc: document, url: new URL('https://example.com'), isTopFrame: true },
+      profile: testProfile(),
+      options: { overwrite: false, getFile: async () => null, freeText: async () => ({ kind: 'bank', text: 'From my bank.', score: 0.99 }) },
+    });
+    expect(capturedNow(genericAdapter, run).answers).toEqual([]);
+  });
+
+  it('keeps answers.json current with what the form holds now, including later steps', async () => {
+    mount('<label for="a">First Name</label><input id="a">');
+    const run = await fillWith(genericAdapter, 'https://example.com/apply');
+    document.body.insertAdjacentHTML('beforeend', '<label for="q">Anything else we should know?</label><textarea id="q"></textarea>');
+    (document.getElementById('q') as HTMLTextAreaElement).value = 'I can start in May.';
+    const answers = formAnswersNow(genericAdapter, run);
+    expect(answers.find((a) => a.question === 'First Name')).toMatchObject({ answer: 'Ada', source: 'autofill' });
+    expect(answers.find((a) => a.question === 'Anything else we should know?')).toMatchObject({ answer: 'I can start in May.', source: 'manual' });
   });
 });

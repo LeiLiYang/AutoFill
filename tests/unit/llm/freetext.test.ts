@@ -2,9 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { genericAdapter } from '../../../src/adapters/generic';
 import type { FreeTextResult } from '../../../src/adapters/types';
 import { runFill } from '../../../src/fill/engine';
-import { captureAnswers } from '../../../src/review/capture';
-import { collectFormAnswers } from '../../../src/review/formAnswers';
-import { testProfile } from '../fixtures';
+import { capturedNow, formAnswersNow, testProfile } from '../fixtures';
 import { mount } from '../helpers';
 
 const FORM = `
@@ -78,17 +76,17 @@ describe('engine: free-text questions', () => {
 
 describe('what gets saved afterwards', () => {
   it('saves only AI drafts the user rewrote, never untouched drafts', async () => {
-    const { reports, descriptors, generated } = await run(async (d) => ({ kind: 'ai', text: `Draft for ${d.label.slice(0, 3)}` }));
-    expect(captureAnswers(descriptors, reports, generated)).toEqual([]); // nothing edited yet
+    const result = await run(async (d) => ({ kind: 'ai', text: `Draft for ${d.label.slice(0, 3)}` }));
+    expect(capturedNow(genericAdapter, result).answers).toEqual([]); // nothing edited yet
 
     (document.getElementById('why') as HTMLTextAreaElement).value = 'My own words.';
-    expect(captureAnswers(descriptors, reports, generated)).toEqual([{ question: 'Why do you want to work at Acme?', answer: 'My own words.' }]);
+    expect(capturedNow(genericAdapter, result).answers).toEqual([{ question: 'Why do you want to work at Acme?', answer: 'My own words.' }]);
   });
 
   it('records the source of each answer in answers.json, and downgrades an edited draft to manual', async () => {
-    const { reports, descriptors, generated } = await run(async () => ({ kind: 'ai', text: 'Draft.' }));
-    expect(collectFormAnswers(descriptors, reports, generated).map((a) => a.source)).toEqual(['ai', 'ai']);
+    const result = await run(async () => ({ kind: 'ai', text: 'Draft.' }));
+    expect(formAnswersNow(genericAdapter, result).map((a) => a.source)).toEqual(['ai', 'ai']);
     (document.getElementById('why') as HTMLTextAreaElement).value = 'Rewritten.';
-    expect(collectFormAnswers(descriptors, reports, generated).map((a) => a.source)).toEqual(['manual', 'ai']);
+    expect(formAnswersNow(genericAdapter, result).map((a) => a.source)).toEqual(['manual', 'ai']);
   });
 });

@@ -8,6 +8,7 @@ import type {
   FileMessage,
   FrameReport,
   LogApplicationResponse,
+  SaveAnswersResult,
   SavePostingResult,
   ToBackground,
   ToContent,
@@ -17,7 +18,7 @@ import { buildLogPrefill, detectChannel, type LogPrefill } from '../tracking/pre
 import type { FileKind, Profile } from '../profile/schema';
 import { loadProfile, loadSettings } from '../profile/store';
 import { base64ToBytes } from '../util/base64';
-import { captureAnswers } from '../review/capture';
+import { captureAnswers, type PriorRun } from '../review/capture';
 import { collectFormAnswers } from '../review/formAnswers';
 import { clearHighlights, highlight, levelFor, scrollToField } from '../review/highlight';
 import type { PanelProps } from '../review/panel/Panel';
@@ -61,7 +62,8 @@ export default defineContentScript({
         logOnly,
         prefill,
         onScroll: (frameId: number, fieldId: string) => void send({ type: 'focus-field', frameId, fieldId }),
-        onSaveAnswers: async () => (await send<{ saved: number }>({ type: 'save-answers' }))?.saved ?? 0,
+        onSaveAnswers: async (): Promise<SaveAnswersResult> =>
+          (await send<SaveAnswersResult | undefined>({ type: 'save-answers' })) ?? { saved: 0, found: 0, scanned: 0, unreachable: 1 },
         onSavePosting: () => send<SavePostingResult>({ type: 'save-posting' }),
         // Reached only from the user's click on the log card's confirm button.
         onLog: (entry: Parameters<NonNullable<PanelProps['onLog']>>[0], force: boolean, alsoSavePosting: boolean) =>
@@ -75,6 +77,13 @@ export default defineContentScript({
       if (panel) panel.update(props);
       else panel = mountPanel(document, props);
     }
+
+    /** The fields on the page right now (a wizard may have moved on since the last fill). */
+    function rescan(): FieldDescriptor[] {
+      const ctx = { doc: document, url: new URL(location.href), isTopFrame: isTop };
+      return pickAdapter(ctx).getFields(ctx);
+    }
+    const priorRun = (): PriorRun => ({ descriptors, reports: lastReports, generated });
 
     function computePrefill(): LogPrefill | null {
       try {
@@ -167,10 +176,10 @@ export default defineContentScript({
           return;
         }
         case 'collect-answers':
-          sendResponse({ answers: captureAnswers(descriptors, lastReports, generated) });
+          sendResponse(captureAnswers(rescan(), priorRun()));
           return;
         case 'collect-form-answers':
-          sendResponse({ answers: collectFormAnswers(descriptors, lastReports, generated) });
+          sendResponse({ answers: collectFormAnswers(rescan(), priorRun()) });
           return;
         case 'extract-posting':
           sendResponse({ posting: extractPosting(document, new URL(location.href)) });

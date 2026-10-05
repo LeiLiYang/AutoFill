@@ -126,6 +126,30 @@ test('workday: fills the current step, never advances, then fills the next step 
   await page.close();
 });
 
+test('save my answers: finds a question on a wizard step that appeared after the last fill', async () => {
+  const page = await ext.context.newPage();
+  await page.goto(`${servers.main.origin}/workday/apply.html`);
+  await triggerFill(ext, page); // step 1 only
+  const panel = page.locator('#autofill-review-host .panel');
+  await expect(panel).toContainText('Log application');
+
+  // The user moves to step 2 (never scanned) and writes an answer to a question that was added there.
+  await page.locator('#next1').click();
+  await page.evaluate(() => {
+    document.getElementById('step2')!.insertAdjacentHTML(
+      'beforeend',
+      '<div><label for="q-extra">Tell us about a project you are proud of</label><textarea id="q-extra"></textarea></div>',
+    );
+  });
+  await page.locator('#q-extra').fill('I built a small compiler for fun.');
+
+  await panel.locator('button.action', { hasText: 'Save my answers' }).click();
+  await expect(panel).toContainText('Saved 1 answer to your answer bank');
+  const bank = await ext.worker.evaluate(async () => (await chrome.storage.local.get('profile')).profile.answerBank);
+  expect(bank).toContainEqual(expect.objectContaining({ question: 'Tell us about a project you are proud of', answer: 'I built a small compiler for fun.' }));
+  await page.close();
+});
+
 test('workday: a resume zone that ignores the input change event still gets the file via drop', async () => {
   const page = await ext.context.newPage();
   await page.addInitScript(() => ((window as any).__uploadMode = 'drop-only'));

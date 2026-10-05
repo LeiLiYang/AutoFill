@@ -113,7 +113,8 @@ test('an already-answered question costs no API call, and an untouched AI draft 
   await expect.poll(() => fresh.locator('#q_why').inputValue()).toContain('Acme');
   const panel = fresh.locator('#autofill-review-host .panel');
   await panel.locator('button.action', { hasText: 'Save my answers' }).click();
-  await expect(panel).toContainText('No new manual answers to save');
+  await expect(panel).toContainText('No hand-written answers found'); // and it says what it looked at
+  await expect(panel).toContainText('looked at');
 
   // Rewriting the draft makes it the user's own answer.
   await fresh.locator('#q_why').fill('My own rewrite of the answer.');

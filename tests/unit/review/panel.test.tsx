@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { describe, expect, it, vi } from 'vitest';
 import type { FieldReport } from '../../../src/adapters/types';
 import { clearHighlights, highlight, levelFor } from '../../../src/review/highlight';
-import { Panel } from '../../../src/review/panel/Panel';
+import { Panel, describeSave } from '../../../src/review/panel/Panel';
 import { mount } from '../helpers';
 
 const rep = (over: Partial<FieldReport>): FieldReport => ({
@@ -47,7 +47,7 @@ describe('Panel', () => {
     document.body.appendChild(host);
     const root = createRoot(host);
     const onScroll = vi.fn();
-    const onSaveAnswers = vi.fn().mockResolvedValue(2);
+    const onSaveAnswers = vi.fn().mockResolvedValue({ saved: 2, found: 2, scanned: 9, unreachable: 0 });
     const onSavePosting = vi.fn().mockResolvedValue({ ok: false, code: 'form-only', message: 'Open the job posting page.' });
     flushSync(() =>
       root.render(
@@ -104,5 +104,28 @@ describe('Panel', () => {
     btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     await vi.waitFor(() => expect(host.textContent).toContain('Saved 2 answers'));
     expect(onSaveAnswers).toHaveBeenCalled();
+  });
+
+  it('shows a visible message when the save request fails instead of doing nothing', async () => {
+    const { host } = render({ onSaveAnswers: vi.fn().mockRejectedValue(new Error('extension reloaded')) });
+    (host.querySelector('button.action') as HTMLElement).dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await vi.waitFor(() => expect(host.textContent).toContain('Could not save: extension reloaded'));
+  });
+});
+
+describe('describeSave: always says what happened', () => {
+  it.each([
+    [{ saved: 1, found: 1, scanned: 5, unreachable: 0 }, 'Saved 1 answer to your answer bank.'],
+    [{ saved: 3, found: 3, scanned: 5, unreachable: 0 }, 'Saved 3 answers to your answer bank.'],
+    [{ saved: 0, found: 2, scanned: 5, unreachable: 0 }, 'Found 2 answers, already in your answer bank unchanged.'],
+    [{ saved: 0, found: 0, scanned: 0, unreachable: 1 }, "Couldn't read the form"],
+    [{ saved: 0, found: 0, scanned: 14, unreachable: 0 }, 'looked at 14 fields'],
+  ])('%j', (result, expected) => expect(describeSave(result)).toContain(expected));
+
+  it('explains what to do when nothing qualified', () => {
+    const msg = describeSave({ saved: 0, found: 0, scanned: 1, unreachable: 0 });
+    expect(msg).toContain('looked at 1 field)');
+    expect(msg).toMatch(/Type your own answers/);
+    expect(msg).toMatch(/profile fields are not saved/);
   });
 });
