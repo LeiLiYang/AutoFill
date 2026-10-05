@@ -12,7 +12,7 @@ import { loadProfile, loadSettings, saveProfile, saveSettings } from '../../prof
 import { deleteFile, getFile, putFile } from '../../profile/files';
 import { exportBackup, importBackup } from '../../profile/importExport';
 import type { TestSheetsResult, ToBackground } from '../../messaging/protocol';
-import { splitSamples } from '../../llm/answerBank';
+import { samplesFromPaste } from '../../llm/answerBank';
 import { pendingRows } from '../../tracking/localLog';
 import { queueAction, useRows } from '../../tracking/useRows';
 
@@ -55,6 +55,8 @@ export function App() {
   const [loaded, setLoaded] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [msg, setMsg] = useState<{ text: string; err?: boolean } | null>(null);
+  /** Text typed into the answer bank's paste box that has not been added yet. */
+  const [paste, setPaste] = useState('');
 
   useEffect(() => {
     Promise.all([loadProfile(), loadSettings()]).then(([p, s]) => {
@@ -74,12 +76,23 @@ export function App() {
     setDirty(true);
   };
 
+  const pending = samplesFromPaste(paste);
   const save = async () => {
+    if (!dirty && !pending.length) {
+      flash(paste.trim() ? 'Nothing was saved: pasted answers must be at least 20 characters each.' : 'Nothing to save: no changes yet.', !!paste.trim());
+      return;
+    }
     try {
-      await saveProfile(profile);
+      // Text still sitting in the paste box counts: it is added to the answer bank on Save.
+      // Blank entries (an "Add" clicked and never filled in) are dropped rather than saved.
+      const bank = [...profile.answerBank, ...pending].filter((a) => a.question.trim() || a.answer.trim());
+      const toSave = { ...profile, answerBank: bank };
+      await saveProfile(toSave);
       await saveSettings(settings);
+      setProfile(toSave);
+      setPaste('');
       setDirty(false);
-      flash('Saved locally.');
+      flash(pending.length ? `Saved. Added ${pending.length} writing sample${pending.length === 1 ? '' : 's'} to your answer bank.` : 'Saved locally.');
     } catch (e) {
       flash(`Save failed: ${(e as Error).message}`, true);
     }
@@ -319,7 +332,13 @@ export function App() {
       )}
 
       {tab === 'answers' && (
-        <AnswerBank answers={profile.answerBank} onChange={(a) => editProfile('answerBank', a)} />
+        <AnswerBank
+          answers={profile.answerBank}
+          onChange={(a) => editProfile('answerBank', a)}
+          paste={paste}
+          onPaste={setPaste}
+          pendingCount={pending.length}
+        />
       )}
 
       {tab === 'files' && <Files flash={flash} />}
@@ -394,8 +413,8 @@ export function App() {
 
       <div className="savebar">
         {msg && <span className={`msg ${msg.err ? 'err' : 'ok'}`}>{msg.text}</span>}
-        {dirty && <span className="msg">Unsaved changes</span>}
-        <button className="primary" onClick={save} disabled={!dirty}>
+        {(dirty || pending.length > 0) && <span className="msg">Unsaved changes</span>}
+        <button className="primary" onClick={save}>
           Save
         </button>
       </div>
@@ -482,17 +501,25 @@ function Applications() {
   );
 }
 
-function AnswerBank({ answers, onChange }: { answers: Answer[]; onChange: (a: Answer[]) => void }) {
-  const [paste, setPaste] = useState('');
+function AnswerBank({
+  answers,
+  onChange,
+  paste,
+  onPaste,
+  pendingCount,
+}: {
+  answers: Answer[];
+  onChange: (a: Answer[]) => void;
+  paste: string;
+  onPaste: (text: string) => void;
+  pendingCount: number;
+}) {
+  // Optional shortcut: the bottom Save bar also adds whatever is in the paste box.
   const addPasted = () => {
-    const now = new Date().toISOString();
-    onChange([
-      ...answers,
-      ...splitSamples(paste).map((answer) => ({ id: crypto.randomUUID(), question: '', answer, tags: [] as string[], updatedAt: now })),
-    ]);
-    setPaste('');
+    onChange([...answers, ...samplesFromPaste(paste)]);
+    onPaste('');
   };
-  const update =(i: number, patch: Partial<Answer>) =>
+  const update = (i: number, patch: Partial<Answer>) =>
     onChange(
       answers.map((a, j) => (j === i ? { ...a, ...patch, updatedAt: new Date().toISOString() } : a)),
     );
@@ -509,12 +536,16 @@ function AnswerBank({ answers, onChange }: { answers: Answer[]; onChange: (a: An
       <div className="entry">
         <label className="f">
           Paste several answers without their questions (separate with a blank line, or a line of ---)
-          <textarea value={paste} onChange={(e) => setPaste(e.target.value)} style={{ minHeight: 110 }} />
+          <textarea value={paste} onChange={(e) => onPaste(e.target.value)} style={{ minHeight: 110 }} />
         </label>
         <div className="row">
-          <button className="ghost" disabled={!splitSamples(paste).length} onClick={addPasted}>
-            Add {splitSamples(paste).length || ''} as writing sample{splitSamples(paste).length === 1 ? '' : 's'}
+          <button className="ghost" disabled={!pendingCount} onClick={addPasted}>
+            Add {pendingCount || ''} as writing sample{pendingCount === 1 ? '' : 's'} to the list below
           </button>
+          {pendingCount > 0 && <small className="hint">{pendingCount} ready. Press the button, or just <strong>Save</strong> at the bottom.</small>}
+          {pendingCount === 0 && paste.trim() !== '' && (
+            <small className="hint msg err">Each answer needs at least 20 characters, and answers are separated by a blank line or a line of ---.</small>
+          )}
         </div>
       </div>
       {answers.map((a, i) => (

@@ -41,7 +41,7 @@ Open the extension's options page (click the icon, then *Profile & settings*):
 3. **Resume**: upload your PDF (and optionally a cover letter). It is stored in this browser only.
 4. **Answer bank** has two kinds of entry:
    - **With a question** ("Why this company?"), plus optional tags: reused directly when a form asks something similar.
-   - **Without a question** (a *writing sample*): if you only have your old answers and not the questions, paste them in (several at once, separated by a blank line or `---`). They are never typed into forms. With an API key, they tell the AI what you've built, what you care about and how you write, and it can draw on those facts when drafting answers to new questions.
+   - **Without a question** (a *writing sample*): if you only have your old answers and not the questions, paste them into the box at the top of the tab (several at once, separated by a blank line or `---`; each answer needs at least 20 characters) and press the **Save** button at the bottom of the page. They are never typed into forms. With an API key, they tell the AI what you've built, what you care about and how you write, and it can draw on those facts when drafting answers to new questions.
 5. **Settings**: Google Sheet ID and tab name, optional Anthropic API key and model name.
 6. **Import / export**: back up everything to one JSON file (resume as base64). The API key is never exported. Keep backups out of git.
 
@@ -153,7 +153,7 @@ Network destinations are limited by the manifest to the supported ATS sites, Lin
 
 ## What is and isn't verified
 
-**Verified by automated tests** (372 unit tests; 30 end-to-end tests that load the built extension in a real browser against local fixtures): matching rules, the fill mechanics (including React-style controlled inputs, selects, radios, custom dropdowns, file inputs), the never-submit and never-CAPTCHA guards, the log/duplicate/escape/queue logic against a fake Sheets server, every location rule, posting extraction and the real MHTML/Markdown/JSON files, the answer bank and LLM flow with a stubbed model, the pinned extension ID, and a production-bundle check that no test hooks ship.
+**Verified by automated tests** (384 unit tests; 36 end-to-end tests that load the built extension in a real browser against local fixtures): matching rules, the fill mechanics (including React-style controlled inputs, selects, radios, custom dropdowns, file inputs), the never-submit and never-CAPTCHA guards, the log/duplicate/escape/queue logic against a fake Sheets server, every location rule, posting extraction and the real MHTML/Markdown/JSON files, the answer bank and LLM flow with a stubbed model, the pinned extension ID, and a production-bundle check that no test hooks ship.
 
 **Not verified against the real services**, and worth a first run with a throwaway sheet and a real application you are not going to submit:
 

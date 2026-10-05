@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { describe, expect, it, vi } from 'vitest';
-import { BANK_CONFIDENT, findAnswer, questionSimilarity, splitSamples, styleSamples } from '../../../src/llm/answerBank';
+import { BANK_CONFIDENT, findAnswer, questionSimilarity, samplesFromPaste, splitSamples, styleSamples } from '../../../src/llm/answerBank';
 import { answerQuestion } from '../../../src/llm/answerQuestion';
 import { fitToLimit, generateAnswer, supportsEffort, type ClaudeDeps } from '../../../src/llm/client';
 import { INSUFFICIENT, buildPrompt, profileSummary } from '../../../src/llm/prompt';
@@ -62,6 +62,17 @@ describe('answer bank matching', () => {
 
   it('never matches a question-less entry to a form question', () => {
     expect(findAnswer('Why do you want to work here?', [ans('', 'I built a compiler for fun.')])).toBeNull();
+  });
+
+  it('turns pasted text into question-less entries that are never matched to form questions', () => {
+    let n = 0;
+    const entries = samplesFromPaste('First answer is long enough to keep.\n\nSecond answer is also long enough.', new Date('2026-10-05T00:00:00Z'), () => `id-${++n}`);
+    expect(entries).toEqual([
+      { id: 'id-1', question: '', answer: 'First answer is long enough to keep.', tags: [], updatedAt: '2026-10-05T00:00:00.000Z' },
+      { id: 'id-2', question: '', answer: 'Second answer is also long enough.', tags: [], updatedAt: '2026-10-05T00:00:00.000Z' },
+    ]);
+    expect(findAnswer('First answer is long enough to keep.', entries)).toBeNull();
+    expect(samplesFromPaste('too short')).toEqual([]);
   });
 
   it('splits pasted text into separate samples', () => {

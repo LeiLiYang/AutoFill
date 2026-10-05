@@ -66,6 +66,11 @@ export function splitSamples(pasted: string): string[] {
   return parts.map((p) => p.trim()).filter((p) => p.length >= 20);
 }
 
+/** Answer-bank entries (no question) for pasted text. */
+export function samplesFromPaste(pasted: string, now: Date = new Date(), uuid: () => string = () => crypto.randomUUID()): Answer[] {
+  return splitSamples(pasted).map((answer) => ({ id: uuid(), question: '', answer, tags: [], updatedAt: now.toISOString() }));
+}
+
 /** Writing samples saved without a question: they show who the applicant is rather than answer something. */
 export const isSample = (a: Answer) => !a.question.trim();
 
