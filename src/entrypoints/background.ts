@@ -13,12 +13,13 @@ import {
   type FileMessage,
   type FrameReport,
   type LogApplicationResponse,
+  type TestSheetsResult,
   type ToBackground,
   type ToContent,
 } from '../messaging/protocol';
 import { chromeSheetsDeps } from '../tracking/auth';
 import { createLogger } from '../tracking/queue';
-import type { SheetsDeps } from '../tracking/sheets';
+import { readUrlColumn, type SheetsDeps } from '../tracking/sheets';
 
 const RETRY_ALARM = 'retry-queue';
 const RETRY_EVERY_MINUTES = 5;
@@ -156,6 +157,27 @@ function runGenerateAnswer(tabId: number | undefined, msg: Extract<ToBackground,
   );
 }
 
+/** Sign in (if needed) and read column H: proves the OAuth client, Sheet ID and tab name work. */
+async function testSheets(): Promise<TestSheetsResult> {
+  const { sheetId, tabName } = await loadSettings();
+  if (!sheetId.trim()) return { ok: false, message: 'Enter your Google Sheet ID first (and save).' };
+  try {
+    const column = await readUrlColumn(
+      {
+        getToken: (i) => sheetsDeps.getToken(i),
+        invalidateToken: (t) => sheetsDeps.invalidateToken(t),
+        fetch: (input, init) => sheetsDeps.fetch(input, init),
+      },
+      sheetId.trim(),
+      tabName,
+      true,
+    );
+    return { ok: true, rows: column.filter((c) => /^https?:/i.test(c)).length };
+  } catch (e) {
+    return { ok: false, message: (e as Error).message };
+  }
+}
+
 /** The user confirmed the log card: write the row, and save the posting too if they ticked that. */
 async function runLog(tabId: number | undefined, msg: Extract<ToBackground, { type: 'log-application' }>): Promise<LogApplicationResponse> {
   const log = await logger.logApplication(msg.entry, { force: msg.force });
@@ -225,6 +247,9 @@ export default defineBackground(() => {
       }
       case 'log-application':
         runLog(tabId, msg).then(sendResponse);
+        return true;
+      case 'test-sheets':
+        testSheets().then(sendResponse);
         return true;
       case 'generate-answer':
         runGenerateAnswer(tabId, msg).then(sendResponse);

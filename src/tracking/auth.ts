@@ -5,6 +5,11 @@ import { SheetsError, type SheetsDeps } from './sheets';
  * a manifest `key`, so the Cloud "Chrome Extension" OAuth client keeps matching it.
  */
 export async function getAuthToken(interactive: boolean): Promise<string> {
+  const clientId = chrome.runtime.getManifest().oauth2?.client_id ?? '';
+  if (!clientId || clientId.startsWith('REPLACE_WITH')) {
+    // Not retryable: queuing the row would just fail again until the build is fixed.
+    throw new SheetsError('config', 'Google OAuth client ID is not set in this build. Follow "Google Cloud setup" in the README, then rebuild.');
+  }
   let result: unknown;
   try {
     result = await chrome.identity.getAuthToken({ interactive });

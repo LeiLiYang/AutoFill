@@ -147,6 +147,28 @@ test('offline: the row is queued locally, shown as pending, and retried exactly 
   await Promise.all([popup.close(), options.close(), page.close()]);
 });
 
+test('settings: pasting a sheet URL keeps the ID, and the connection test reports the result', async () => {
+  const options = await ext.context.newPage();
+  await options.goto(`chrome-extension://${ext.id}/options.html`);
+  await options.getByRole('button', { name: 'Settings' }).click();
+  await options.getByLabel('Google Sheet ID').fill('https://docs.google.com/spreadsheets/d/1AbC-dEf_123/edit#gid=0');
+  await expect(options.getByLabel('Google Sheet ID')).toHaveValue('1AbC-dEf_123');
+  await options.getByRole('button', { name: 'Save' }).click();
+
+  await options.getByRole('button', { name: 'Test Google Sheets connection' }).click();
+  await expect(options.getByRole('status').last()).toContainText('Connected. 0 job URLs found in column H.');
+
+  await setOnline(ext, false);
+  await options.getByRole('button', { name: 'Test Google Sheets connection' }).click();
+  await expect(options.getByRole('status').last()).toContainText('Network error');
+  await setOnline(ext, true);
+  await ext.worker.evaluate(async () => {
+    const cur = (await chrome.storage.local.get('settings')).settings;
+    await chrome.storage.local.set({ settings: { ...cur, sheetId: 'test-sheet' } });
+  });
+  await options.close();
+});
+
 test('an unresolved location blocks logging until the user picks one', async () => {
   const page = await ext.context.newPage();
   await page.goto(`${servers.main.origin}/generic/basic.html`); // no location on the page

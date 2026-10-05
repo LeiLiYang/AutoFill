@@ -7,6 +7,8 @@ import type { LogEntry } from '../tracking/row';
 
 export type { ExtractedPosting, FormAnswer, SavePostingResult, LogResult };
 
+export type TestSheetsResult = { ok: true; rows: number } | { ok: false; message: string };
+
 export interface LogApplicationResponse {
   log: LogResult;
   /** Present when "also save posting" was ticked and the log succeeded. */
@@ -51,6 +53,8 @@ export type ToBackground =
   | { type: 'generate-answer'; question: string; maxLength?: number }
   /** Remember this page's job description so a later form page (e.g. Workday /apply) can use it. */
   | { type: 'cache-posting'; posting: ExtractedPosting }
+  /** Settings page: sign in and read the sheet, to check the Sheet ID, tab name and OAuth setup. */
+  | { type: 'test-sheets' }
   | { type: 'queue-retry'; id?: string; force?: boolean }
   | { type: 'queue-mark-synced'; id: string }
   | { type: 'queue-discard'; id: string };

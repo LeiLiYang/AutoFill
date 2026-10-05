@@ -11,6 +11,7 @@ import {
 import { loadProfile, loadSettings, saveProfile, saveSettings } from '../../profile/store';
 import { deleteFile, getFile, putFile } from '../../profile/files';
 import { exportBackup, importBackup } from '../../profile/importExport';
+import type { TestSheetsResult, ToBackground } from '../../messaging/protocol';
 import { pendingRows } from '../../tracking/localLog';
 import { queueAction, useRows } from '../../tracking/useRows';
 
@@ -324,8 +325,12 @@ export function App() {
                 Google Sheet ID
                 <input
                   type="text"
+                  placeholder="or paste the sheet's full URL"
                   value={settings.sheetId}
-                  onChange={(e) => editSettings('sheetId', e.target.value.trim())}
+                  // Accept a pasted URL and keep just the ID part.
+                  onChange={(e) =>
+                    editSettings('sheetId', (/\/spreadsheets\/d\/([\w-]+)/.exec(e.target.value)?.[1] ?? e.target.value).trim())
+                  }
                 />
               </label>
               <label className="f">
@@ -354,6 +359,7 @@ export function App() {
                 />
               </label>
             </div>
+            <TestSheets dirty={dirty} />
             <div className="row">
               <label className="check">
                 <input
@@ -387,7 +393,31 @@ export function App() {
   );
 }
 
-const STATUS_LABEL = { synced: 'In sheet', pending: 'Queued', failed: 'Needs attention' } as const;
+/** Signs in to Google and reads the sheet, so setup problems show up here and not on a real application. */
+function TestSheets({ dirty }: { dirty: boolean }) {
+  const [state, setState] = useState<'idle' | 'testing' | { ok: boolean; text: string }>('idle');
+  const test = async () => {
+    setState('testing');
+    const msg: ToBackground = { type: 'test-sheets' };
+    const res = (await chrome.runtime.sendMessage(msg)) as TestSheetsResult;
+    setState(
+      res.ok
+        ? { ok: true, text: `Connected. ${res.rows} job URL${res.rows === 1 ? '' : 's'} found in column H.` }
+        : { ok: false, text: res.message },
+    );
+  };
+  return (
+    <div className="row">
+      <button className="ghost" onClick={test} disabled={state === 'testing'}>
+        {state === 'testing' ? 'Testing…' : 'Test Google Sheets connection'}
+      </button>
+      {dirty && <small className="hint">Save your changes first: the test uses the saved settings.</small>}
+      {typeof state === 'object' && <span className={`msg ${state.ok ? 'ok' : 'err'}`} role="status">{state.text}</span>}
+    </div>
+  );
+}
+
+const STATUS_LABEL ={ synced: 'In sheet', pending: 'Queued', failed: 'Needs attention' } as const;
 
 /** Local copy of every logged row, with the retry queue made visible and actionable. */
 function Applications() {
