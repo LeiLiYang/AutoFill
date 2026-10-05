@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Software Engineer @ Acme</title></head>
+<body>
+<div class="ashby-application-form-container">
+  <form>
+    <div class="ashby-application-form-field-entry">
+      <label class="ashby-application-form-question-title" for="_systemfield_name">Name <span>*</span></label>
+      <input id="_systemfield_name" name="_systemfield_name" type="text" required>
+    </div>
+    <div class="ashby-application-form-field-entry">
+      <label class="ashby-application-form-question-title" for="_systemfield_email">Email <span>*</span></label>
+      <input id="_systemfield_email" name="_systemfield_email" type="email" required>
+    </div>
+    <div class="ashby-application-form-field-entry">
+      <label class="ashby-application-form-question-title" for="_systemfield_resume">Resume <span>*</span></label>
+      <div class="_fileUpload_abc"><input id="_systemfield_resume" name="_systemfield_resume" type="file" required>
+        <button type="button">Upload File</button></div>
+    </div>
+    <div class="ashby-application-form-field-entry">
+      <label class="ashby-application-form-question-title" for="9a1b2c3d-0000-0000-0000-000000000001">LinkedIn Profile</label>
+      <input id="9a1b2c3d-0000-0000-0000-000000000001" name="9a1b2c3d-0000-0000-0000-000000000001" type="text">
+    </div>
+    <div class="ashby-application-form-field-entry">
+      <label class="ashby-application-form-question-title" for="9a1b2c3d-0000-0000-0000-000000000002">Phone number</label>
+      <input id="9a1b2c3d-0000-0000-0000-000000000002" name="9a1b2c3d-0000-0000-0000-000000000002" type="tel">
+    </div>
+
+    <!-- Yes/No questions are pairs of buttons, not radios -->
+    <div class="ashby-application-form-field-entry">
+      <label class="ashby-application-form-question-title">Are you legally authorized to work in Canada? <span>*</span></label>
+      <div class="_yesno_x1" id="yn-auth">
+        <button type="button" class="_option_x1" aria-pressed="false">Yes</button>
+        <button type="button" class="_option_x1" aria-pressed="false">No</button>
+      </div>
+    </div>
+    <div class="ashby-application-form-field-entry">
+      <label class="ashby-application-form-question-title">Will you now or in the future require visa sponsorship? <span>*</span></label>
+      <div class="_yesno_x1" id="yn-spons">
+        <button type="button" class="_option_x1" aria-pressed="false">Yes</button>
+        <button type="button" class="_option_x1" aria-pressed="false">No</button>
+      </div>
+    </div>
+
+    <div class="ashby-application-form-field-entry">
+      <label class="ashby-application-form-question-title" for="9a1b2c3d-0000-0000-0000-000000000003">What interests you most about this role? <span>*</span></label>
+      <textarea id="9a1b2c3d-0000-0000-0000-000000000003" name="9a1b2c3d-0000-0000-0000-000000000003" required></textarea>
+    </div>
+
+    <button type="submit" id="ashby-submit">Submit Application</button>
+  </form>
+</div>
+<script>
+  // Yes/No buttons toggle aria-pressed like Ashby's React component does.
+  document.querySelectorAll('[class*="_yesno_"]').forEach((group) => {
+    group.addEventListener('click', (e) => {
+      const btn = e.target.closest('button');
+      if (!btn) return;
+      group.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b === btn)));
+    });
+  });
+</script>
+</body>
+</html>

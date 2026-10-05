@@ -102,7 +102,10 @@ export function e2eProfile(): Profile {
   p.links.portfolio = 'https://ada.dev';
   p.address = { ...p.address, city: 'Montreal', region: 'QC', country: 'Canada' };
   p.work.authorizedCountries = ['Canada'];
-  p.experience = [{ company: 'Analytical Engines', title: 'Engineer', location: '', startDate: '', endDate: '', current: true, description: '' }];
+  p.experience = [
+    { company: 'Analytical Engines', title: 'Engineer', location: 'Montreal, QC', startDate: '2025-05', endDate: '', current: true, description: 'Built the engine.' },
+  ];
+  p.education = [{ school: 'Example University', degree: 'BSc', field: 'Computer Science', startDate: '2022-09', endDate: '2026-05', gpa: '3.9', current: false }];
   return p;
 }
 

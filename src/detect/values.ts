@@ -38,6 +38,17 @@ function currentExperience(p: Profile) {
   return p.experience.find((e) => e.current) ?? p.experience[0];
 }
 
+/** The experience entry a field belongs to: its section index when the form repeats, else the current job. */
+const exp = (p: Profile, d: FieldDescriptor) => (d.entryIndex != null ? p.experience[d.entryIndex] : currentExperience(p));
+const edu = (p: Profile, d: FieldDescriptor) => p.education[d.entryIndex ?? 0];
+
+/** "2025-03" / "2025-03-14" / "2025" → the month ("03") or year ("2025") part, or ''. */
+export function datePart(date: string | undefined, part: 'month' | 'year'): string {
+  const m = /^(\d{4})(?:[-/](\d{1,2}))?/.exec((date ?? '').trim());
+  if (!m) return '';
+  return part === 'year' ? m[1]! : m[2] ? m[2].padStart(2, '0') : '';
+}
+
 /** Resolve a profile key to the value to enter, or null when the profile has no data. */
 export function resolveValue(key: ProfileKey, p: Profile, d: FieldDescriptor): FillValue | null {
   const { contact, links, address, work } = p;
@@ -71,12 +82,21 @@ export function resolveValue(key: ProfileKey, p: Profile, d: FieldDescriptor): F
     case 'startDate': return text(work.startDate);
     case 'noticePeriod': return text(work.noticePeriod);
     case 'salary': return text(work.salaryExpectation.amount);
-    case 'currentCompany': return text(currentExperience(p)?.company);
-    case 'currentTitle': return text(currentExperience(p)?.title);
-    case 'school': return text(p.education[0]?.school);
-    case 'degree': return text(p.education[0]?.degree);
-    case 'field': return text(p.education[0]?.field);
-    case 'gpa': return text(p.education[0]?.gpa);
+    case 'currentCompany': return text(exp(p, d)?.company);
+    case 'currentTitle': return text(exp(p, d)?.title);
+    case 'expLocation': return text(exp(p, d)?.location);
+    case 'expDescription': return text(exp(p, d)?.description);
+    case 'expCurrent': return exp(p, d) ? { type: 'bool', value: exp(p, d)!.current } : null;
+    case 'expStartMonth': return text(datePart(exp(p, d)?.startDate, 'month'));
+    case 'expStartYear': return text(datePart(exp(p, d)?.startDate, 'year'));
+    case 'expEndMonth': return exp(p, d)?.current ? null : text(datePart(exp(p, d)?.endDate, 'month'));
+    case 'expEndYear': return exp(p, d)?.current ? null : text(datePart(exp(p, d)?.endDate, 'year'));
+    case 'school': return text(edu(p, d)?.school);
+    case 'degree': return text(edu(p, d)?.degree);
+    case 'field': return text(edu(p, d)?.field);
+    case 'gpa': return text(edu(p, d)?.gpa);
+    case 'eduStartYear': return text(datePart(edu(p, d)?.startDate, 'year'));
+    case 'eduEndYear': return text(datePart(edu(p, d)?.endDate, 'year'));
     case 'gender': return eeoValue(p.eeo.gender);
     case 'race': return eeoValue(p.eeo.race);
     case 'hispanicLatino': return eeoValue(p.eeo.hispanicLatino);

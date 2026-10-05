@@ -45,7 +45,7 @@ export async function defaultFill(d: FieldDescriptor, v: FillValue, opts: FillOp
     }
     case 'radio': {
       const picked = chooseInGroup(d.options ?? [], targetsOf(v));
-      return picked ? ok(picked.option.text) : fail('no matching option');
+      return picked ? ok(picked.option.text) : fail('no matching option, or the selection did not register');
     }
     case 'checkbox': {
       if (v.type === 'bool' && (d.options?.length ?? 1) <= 1) {

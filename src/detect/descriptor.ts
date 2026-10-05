@@ -2,9 +2,11 @@ import type { FieldDescriptor, FieldKind, FieldOption } from '../adapters/types'
 import { PLACEHOLDER_OPTION } from '../config/optionSynonyms';
 import { isCaptchaElement, isFillable } from '../fill/safety';
 import { cleanLabel, normalize } from './normalize';
+import { isOptionSelected } from './selection';
 
 const SKIP_INPUT_TYPES = new Set(['hidden', 'submit', 'button', 'image', 'reset', 'password', 'search', 'range', 'color']);
-const CONTROL_SELECTOR = 'input, textarea, select, [role="combobox"]';
+// Custom dropdowns: ARIA comboboxes (react-select) and listbox buttons (Workday).
+const CONTROL_SELECTOR = 'input, textarea, select, [role="combobox"], button[aria-haspopup="listbox"]';
 const MAX_NEARBY_CHARS = 200;
 
 /** Text of an element excluding form controls (so a wrapping <label> yields only its caption). */
@@ -115,10 +117,14 @@ function readCurrentValue(el: HTMLElement, kind: FieldKind, group?: HTMLInputEle
     const o = s.selectedOptions[0];
     return o && !isPlaceholderOption(o.text, o.value) ? o.text.trim() : '';
   }
-  if (kind === 'radio') return group?.some((r) => r.checked) ? 'checked' : '';
-  if (kind === 'checkbox') return group?.some((r) => r.checked) ? 'checked' : '';
+  if (kind === 'radio' || kind === 'checkbox') return group?.some((r) => isOptionSelected(r)) ? 'checked' : '';
   if (kind === 'file') return (el as HTMLInputElement).files?.length ? (el as HTMLInputElement).files![0]!.name : '';
   if (kind === 'combobox') {
+    if (el instanceof HTMLButtonElement) {
+      // Listbox buttons show the chosen value as their text; "Select One" is the empty state.
+      const t = (el.textContent ?? '').replace(/\s+/g, ' ').trim();
+      return PLACEHOLDER_OPTION.test(normalize(t)) ? '' : t;
+    }
     const typed = (el as HTMLInputElement).value ?? '';
     if (typed) return typed;
     const shown = el.closest('[class*="control" i], [class*="select" i]')?.querySelector('[class*="singleValue" i], [class*="single-value" i]');
@@ -130,7 +136,7 @@ function readCurrentValue(el: HTMLElement, kind: FieldKind, group?: HTMLInputEle
 /** What the control holds right now, as human-readable answer text (re-reads the live DOM). */
 export function currentAnswerText(d: FieldDescriptor): string {
   if (d.kind === 'radio' || d.kind === 'checkbox') {
-    const chosen = (d.options ?? []).filter((o) => (o.element as HTMLInputElement | undefined)?.checked);
+    const chosen = (d.options ?? []).filter((o) => isOptionSelected(o.element));
     return chosen.map((o) => o.text).join(', ');
   }
   if (d.kind === 'file') return '';
@@ -147,6 +153,7 @@ function kindOf(el: HTMLElement): FieldKind | null {
   if (el instanceof HTMLTextAreaElement) return 'textarea';
   if (el instanceof HTMLSelectElement) return 'select';
   if (el.getAttribute('role') === 'combobox') return 'combobox';
+  if (el instanceof HTMLButtonElement) return el.getAttribute('aria-haspopup') === 'listbox' ? 'combobox' : null;
   if (el instanceof HTMLInputElement) {
     const t = el.type;
     if (SKIP_INPUT_TYPES.has(t)) return null;

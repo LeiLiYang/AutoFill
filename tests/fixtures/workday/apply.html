@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Acme Careers - Apply</title></head>
+<body>
+<div data-automation-id="applyFlowPage">
+  <!-- ===================== Step 1: My Information ===================== -->
+  <section id="step1" data-step="1">
+    <h2>My Information</h2>
+
+    <div data-automation-id="formField-legalNameSection_firstName">
+      <label for="first">Given Name(s)<span>*</span></label>
+      <input id="first" data-automation-id="legalNameSection_firstName" type="text" aria-required="true">
+    </div>
+    <div data-automation-id="formField-legalNameSection_lastName">
+      <label for="last">Family Name<span>*</span></label>
+      <input id="last" data-automation-id="legalNameSection_lastName" type="text" aria-required="true">
+    </div>
+
+    <div data-automation-id="formField-countryDropdown">
+      <label id="country-label" for="country">Country<span>*</span></label>
+      <button id="country" type="button" data-automation-id="countryDropdown" aria-haspopup="listbox" aria-labelledby="country-label"
+              data-options="United States of America|Canada|United Kingdom">Select One</button>
+    </div>
+    <div data-automation-id="formField-addressSection_addressLine1">
+      <label for="addr1">Address Line 1<span>*</span></label>
+      <input id="addr1" data-automation-id="addressSection_addressLine1" type="text" aria-required="true">
+    </div>
+    <div data-automation-id="formField-addressSection_city">
+      <label for="city">City<span>*</span></label>
+      <input id="city" data-automation-id="addressSection_city" type="text" aria-required="true">
+    </div>
+    <div data-automation-id="formField-addressSection_countryRegion">
+      <label id="region-label" for="region">Province<span>*</span></label>
+      <button id="region" type="button" data-automation-id="addressSection_countryRegion" aria-haspopup="listbox" aria-labelledby="region-label"
+              data-options="Alberta|British Columbia|Ontario|Quebec">Select One</button>
+    </div>
+    <div data-automation-id="formField-addressSection_postalCode">
+      <label for="postal">Postal Code<span>*</span></label>
+      <input id="postal" data-automation-id="addressSection_postalCode" type="text" aria-required="true">
+    </div>
+
+    <div data-automation-id="formField-phone-device-type">
+      <label id="pdt-label" for="pdt">Phone Device Type<span>*</span></label>
+      <button id="pdt" type="button" data-automation-id="phone-device-type" aria-haspopup="listbox" aria-labelledby="pdt-label"
+              data-options="Mobile|Home|Work">Select One</button>
+    </div>
+    <div data-automation-id="formField-country-phone-code">
+      <label id="cpc-label" for="cpc">Country Phone Code<span>*</span></label>
+      <button id="cpc" type="button" data-automation-id="country-phone-code" aria-haspopup="listbox" aria-labelledby="cpc-label"
+              data-options="Canada (+1)|United States of America (+1)">Select One</button>
+    </div>
+    <div data-automation-id="formField-phone-number">
+      <label for="phone">Phone Number<span>*</span></label>
+      <input id="phone" data-automation-id="phone-number" type="text" aria-required="true">
+    </div>
+
+    <div data-automation-id="formField-email">
+      <label for="email">Email Address</label>
+      <input id="email" data-automation-id="email" type="text">
+    </div>
+
+    <button type="button" data-automation-id="bottom-navigation-next-button" id="next1">Save and Continue</button>
+  </section>
+
+  <!-- ===================== Step 2: My Experience (hidden until Next) ===================== -->
+  <section id="step2" data-step="2" style="display:none">
+    <h2>My Experience</h2>
+
+    <div data-automation-id="workExperience-1">
+      <h3>Work Experience 1</h3>
+      <div data-automation-id="formField-jobTitle">
+        <label for="jt1">Job Title<span>*</span></label>
+        <input id="jt1" data-automation-id="jobTitle" type="text" aria-required="true">
+      </div>
+      <div data-automation-id="formField-companyName">
+        <label for="co1">Company<span>*</span></label>
+        <input id="co1" data-automation-id="companyName" type="text" aria-required="true">
+      </div>
+      <div data-automation-id="formField-location">
+        <label for="loc1">Location</label>
+        <input id="loc1" data-automation-id="location" type="text">
+      </div>
+      <div data-automation-id="formField-currentlyWorkHere">
+        <input id="cur1" data-automation-id="currentlyWorkHere" type="checkbox">
+        <label for="cur1">I currently work here</label>
+      </div>
+      <div data-automation-id="formField-startDate">
+        <label>From</label>
+        <input data-automation-id="dateSectionMonth-input" id="sm1" type="text" placeholder="MM" aria-label="Month">
+        <input data-automation-id="dateSectionYear-input" id="sy1" type="text" placeholder="YYYY" aria-label="Year">
+      </div>
+      <div data-automation-id="formField-endDate">
+        <label>To</label>
+        <input data-automation-id="dateSectionMonth-input" id="em1" type="text" placeholder="MM" aria-label="Month">
+        <input data-automation-id="dateSectionYear-input" id="ey1" type="text" placeholder="YYYY" aria-label="Year">
+      </div>
+      <div data-automation-id="formField-roleDescription">
+        <label for="rd1">Role Description</label>
+        <textarea id="rd1" data-automation-id="roleDescription"></textarea>
+      </div>
+    </div>
+
+    <div data-automation-id="workExperience-2">
+      <h3>Work Experience 2</h3>
+      <div data-automation-id="formField-jobTitle">
+        <label for="jt2">Job Title<span>*</span></label>
+        <input id="jt2" data-automation-id="jobTitle" type="text" aria-required="true">
+      </div>
+      <div data-automation-id="formField-companyName">
+        <label for="co2">Company<span>*</span></label>
+        <input id="co2" data-automation-id="companyName" type="text" aria-required="true">
+      </div>
+    </div>
+
+    <div data-automation-id="education-1">
+      <h3>Education 1</h3>
+      <div data-automation-id="formField-schoolName">
+        <label for="sch1">School or University<span>*</span></label>
+        <input id="sch1" data-automation-id="schoolName" type="text" aria-required="true">
+      </div>
+      <div data-automation-id="formField-degree">
+        <label id="deg-label" for="deg1">Degree</label>
+        <button id="deg1" type="button" data-automation-id="degree" aria-haspopup="listbox" aria-labelledby="deg-label"
+                data-options="High School|Bachelor's Degree|BSc|Master's Degree">Select One</button>
+      </div>
+      <div data-automation-id="formField-lastYearAttended">
+        <label>Last Year Attended</label>
+        <input data-automation-id="dateSectionYear-input" id="ly1" type="text" placeholder="YYYY" aria-label="Year">
+      </div>
+    </div>
+
+    <div data-automation-id="resumeSection">
+      <label>Resume/CV</label>
+      <div data-automation-id="file-upload-drop-zone">
+        <input type="file" data-automation-id="file-upload-input-ref" id="resume-input" style="display:none">
+        <button type="button">Select files</button>
+      </div>
+    </div>
+
+    <button type="button" data-automation-id="bottom-navigation-next-button" id="next2">Save and Continue</button>
+  </section>
+</div>
+
+<script>
+  window.__syntheticNextClicks = 0;
+  window.__nextClicks = 0;
+
+  // Next / Save and Continue: only a real (trusted) user click advances; synthetic clicks are counted.
+  document.querySelectorAll('[data-automation-id="bottom-navigation-next-button"]').forEach((b) =>
+    b.addEventListener('click', (e) => {
+      window.__nextClicks++;
+      if (!e.isTrusted) window.__syntheticNextClicks++;
+      else if (b.id === 'next1') {
+        document.getElementById('step1').style.display = 'none';
+        document.getElementById('step2').style.display = '';
+      }
+    }),
+  );
+
+  // Workday-style listbox buttons: open a portal listbox; picking an option writes its text into the button.
+  document.querySelectorAll('button[aria-haspopup="listbox"]').forEach((btn) =>
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('ul[role="listbox"]').forEach((u) => u.remove());
+      const ul = document.createElement('ul');
+      ul.setAttribute('role', 'listbox');
+      for (const text of btn.dataset.options.split('|')) {
+        const li = document.createElement('li');
+        li.setAttribute('role', 'option');
+        li.setAttribute('data-automation-id', 'promptOption');
+        li.textContent = text;
+        li.addEventListener('click', () => {
+          btn.textContent = text;
+          ul.remove();
+        });
+        ul.appendChild(li);
+      }
+      document.body.appendChild(ul);
+    }),
+  );
+</script>
+</body>
+</html>

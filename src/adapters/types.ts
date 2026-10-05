@@ -10,7 +10,11 @@ export type ProfileKey =
   | 'currentCompany' | 'currentTitle'
   | 'school' | 'degree' | 'field' | 'gpa'
   | 'gender' | 'race' | 'hispanicLatino' | 'veteran' | 'disability'
-  | 'resume' | 'coverLetter';
+  | 'resume' | 'coverLetter'
+  // Indexed work-history / education fields (set by adapters via entryIndex, never by label rules).
+  | 'expLocation' | 'expDescription' | 'expCurrent'
+  | 'expStartMonth' | 'expStartYear' | 'expEndMonth' | 'expEndYear'
+  | 'eduStartYear' | 'eduEndYear';
 
 export type FieldKind =
   | 'text' | 'textarea' | 'select' | 'radio' | 'checkbox' | 'combobox' | 'file' | 'date';
@@ -38,6 +42,8 @@ export interface FieldDescriptor {
   currentValue: string;
   /** Adapter-provided hint that skips rule matching. */
   hintedKey?: ProfileKey;
+  /** Which work-experience / education entry this field belongs to (0-based), when the form repeats sections. */
+  entryIndex?: number;
 }
 
 export interface Match {

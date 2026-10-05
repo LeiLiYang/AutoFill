@@ -57,15 +57,22 @@ export async function fillCombobox(
   targets: string[],
 ): Promise<{ ok: boolean; chosen?: string; score?: number }> {
   const control = input.closest<HTMLElement>('[class*="control" i]') ?? input;
+
+  // Options already on screen before we open this control belong to some other (possibly stuck-open)
+  // dropdown. Ignore them, unless this control is explicitly linked to its own listbox.
+  const linked = !!(input.getAttribute('aria-controls') || input.getAttribute('aria-owns'));
+  const stale = linked ? new Set<HTMLElement>() : new Set(visibleOptions(input));
+  const ours = () => visibleOptions(input).filter((o) => !stale.has(o));
+
   input.focus();
   safeMouseDown(control);
-  if (!visibleOptions(input).length) safeClick(control);
-  if (!visibleOptions(input).length) safeKey(input, 'ArrowDown');
+  if (!ours().length) safeClick(control);
+  if (!ours().length) safeKey(input, 'ArrowDown');
 
   const attempt = async (query: string) => {
     typeInto(input, query);
     return waitFor(() => {
-      const els = visibleOptions(input);
+      const els = ours();
       return els.length ? els : null;
     });
   };
@@ -87,7 +94,7 @@ export async function fillCombobox(
   const optionEl = picked.option.element!;
   safeClick(optionEl);
   await sleep(60);
-  const ok = showsValue(input, picked.option.text) || !visibleOptions(input).includes(optionEl);
+  const ok = showsValue(input, picked.option.text) || !ours().includes(optionEl);
   if (!ok) safeKey(input, 'Escape');
   return { ok, chosen: picked.option.text, score: picked.score };
 }

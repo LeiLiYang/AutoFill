@@ -2,6 +2,7 @@ import type { FieldOption } from '../adapters/types';
 import { NO, PLACEHOLDER_OPTION, YES } from '../config/optionSynonyms';
 import { optionScore } from '../detect/fuzzy';
 import { normalize } from '../detect/normalize';
+import { isOptionSelected } from '../detect/selection';
 import { safeClick } from './safety';
 import { dispatchChange, dispatchInput, setNativeValue } from './text';
 
@@ -44,9 +45,10 @@ export function selectNative(select: HTMLSelectElement, targets: string[]): Pick
 export function chooseInGroup(options: FieldOption[], targets: string[]): PickedOption | null {
   const picked = pickOption(options, targets);
   if (!picked || picked.score < MIN_OPTION_SCORE) return null;
-  const input = picked.option.element as HTMLInputElement;
-  if (!input.checked && !safeClick(input)) return null;
-  return input.checked ? picked : null;
+  const el = picked.option.element!;
+  if (!isOptionSelected(el) && !safeClick(el)) return null;
+  // Button groups only count once the page reflects the click (aria-pressed / state class).
+  return isOptionSelected(el) ? picked : null;
 }
 
 /** Set a lone checkbox to the desired state. */

@@ -4,12 +4,17 @@ import type { PlatformAdapter } from '../../src/adapters/types';
 import { runFill } from '../../src/fill/engine';
 import { defaultProfile, type Profile } from '../../src/profile/schema';
 
-/** Load tests/fixtures/<path> into the jsdom document (scripts are not executed). */
-export function loadFixture(path: string): void {
+/**
+ * Load tests/fixtures/<path> into the jsdom document. Inline scripts are not executed unless
+ * `runScripts` is set (used for fixtures whose widgets need their behaviour, e.g. dropdowns).
+ */
+export function loadFixture(path: string, opts: { runScripts?: boolean } = {}): void {
   const html = readFileSync(resolve(__dirname, '../fixtures', path), 'utf8');
   const parsed = new DOMParser().parseFromString(html, 'text/html');
+  const scripts = Array.from(parsed.querySelectorAll('script')).map((s) => s.textContent ?? '');
   parsed.querySelectorAll('script').forEach((s) => s.remove());
   document.body.innerHTML = parsed.body.innerHTML;
+  if (opts.runScripts) for (const code of scripts) (0, eval)(code);
 }
 
 export function testProfile(): Profile {
@@ -21,7 +26,10 @@ export function testProfile(): Profile {
   p.address = { ...p.address, city: 'Montreal', region: 'QC', country: 'Canada' };
   p.work.authorizedCountries = ['Canada'];
   p.work.requiresSponsorship = false;
-  p.experience = [{ company: 'Analytical Engines', title: 'Engineer', location: '', startDate: '', endDate: '', current: true, description: '' }];
+  p.experience = [
+    { company: 'Analytical Engines', title: 'Engineer', location: 'Montreal, QC', startDate: '2025-05', endDate: '', current: true, description: 'Built the engine.' },
+  ];
+  p.education = [{ school: 'Example University', degree: 'BSc', field: 'Computer Science', startDate: '2022-09', endDate: '2026-05', gpa: '3.9', current: false }];
   return p;
 }
 

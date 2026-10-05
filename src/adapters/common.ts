@@ -10,18 +10,31 @@ export function describeWithin(ctx: AdapterContext, rootSelectors: string[], ski
 
 export interface Hint {
   /** Tested against the field's attribute words ("job application first name"). */
-  attr: RegExp;
+  attr?: RegExp;
+  /** Alternative to `attr`: any predicate over the descriptor (e.g. "inside the resume section"). */
+  test?: (d: FieldDescriptor) => boolean;
   key: ProfileKey;
   only?: FieldDescriptor['kind'][];
 }
 
-/** Platform hints skip rule matching for fields whose ids/names we know. */
+/** Platform hints skip rule matching for fields whose ids/names we know. First matching hint wins. */
 export function applyHints(ds: FieldDescriptor[], hints: Hint[]): FieldDescriptor[] {
   return ds.map((d) => {
     const words = [d.name, d.htmlId, d.automationId].filter(Boolean).map((v) => attrWords(v));
-    const hint = hints.find((h) => (!h.only || h.only.includes(d.kind)) && words.some((w) => h.attr.test(w)));
+    const hint = hints.find(
+      (h) =>
+        (!h.only || h.only.includes(d.kind)) &&
+        ((h.attr && words.some((w) => h.attr!.test(w))) || (h.test && h.test(d))),
+    );
     return hint ? { ...d, hintedKey: hint.key } : d;
   });
+}
+
+/** Number N from the nearest ancestor whose data-automation-id is "<prefix>-N" (1-based in the page, 0-based here). */
+export function sectionIndex(el: Element, prefix: string): number | undefined {
+  const sec = el.closest(`[data-automation-id^="${prefix}-"]`);
+  const n = Number(sec?.getAttribute('data-automation-id')?.slice(prefix.length + 1));
+  return Number.isInteger(n) && n >= 1 ? n - 1 : undefined;
 }
 
 /** Replace weak labels with the platform's own question element text. */
