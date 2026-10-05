@@ -29,6 +29,14 @@ export function fitToLimit(text: string, maxChars?: number): string {
   return cut.slice(0, cut.lastIndexOf(' ') > 0 ? cut.lastIndexOf(' ') : maxChars).trim();
 }
 
+/** Free-text answers are at most two paragraphs. Extra paragraphs are folded into the second, not dropped. */
+export const MAX_PARAGRAPHS = 2;
+export function limitParagraphs(text: string, max = MAX_PARAGRAPHS): string {
+  const paras = text.split(/\n\s*\n/).map((p) => p.replace(/\s*\n\s*/g, ' ').trim()).filter(Boolean);
+  if (paras.length <= max) return paras.join('\n\n');
+  return [...paras.slice(0, max - 1), paras.slice(max - 1).join(' ')].join('\n\n');
+}
+
 export async function generateAnswer(
   deps: ClaudeDeps,
   req: { model: string; system: string; user: string; maxChars?: number },
@@ -56,7 +64,7 @@ export async function generateAnswer(
     if (text.startsWith(INSUFFICIENT)) {
       return { ok: false, kind: 'insufficient', message: 'Not enough in your profile or answer bank to answer this without inventing details. Write it yourself.' };
     }
-    return { ok: true, text: fitToLimit(text, req.maxChars) };
+    return { ok: true, text: fitToLimit(limitParagraphs(text), req.maxChars) };
   } catch (e) {
     if (e instanceof Anthropic.AuthenticationError) return { ok: false, kind: 'auth', message: 'Anthropic rejected the API key. Check it in the extension settings.' };
     if (e instanceof Anthropic.RateLimitError) return { ok: false, kind: 'rate-limit', message: 'Rate limited by Anthropic. Wait a moment and fill again.' };

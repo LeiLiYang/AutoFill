@@ -2,7 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { describe, expect, it, vi } from 'vitest';
 import { BANK_CONFIDENT, findAnswer, questionSimilarity, samplesFromPaste, splitSamples, styleSamples } from '../../../src/llm/answerBank';
 import { answerQuestion } from '../../../src/llm/answerQuestion';
-import { fitToLimit, generateAnswer, supportsEffort, type ClaudeDeps } from '../../../src/llm/client';
+import { fitToLimit, generateAnswer, limitParagraphs, supportsEffort, type ClaudeDeps } from '../../../src/llm/client';
 import { INSUFFICIENT, buildPrompt, profileSummary } from '../../../src/llm/prompt';
 import { cachePosting, getCachedPosting } from '../../../src/posting/cache';
 import { memoryStore } from '../../../src/profile/storage';
@@ -123,6 +123,29 @@ describe('prompt', () => {
     expect(out.user).not.toContain('<writing_samples'); // none provided: no empty block
   });
 
+  it('asks for one concise answer of at most two paragraphs, synthesised rather than a list of past answers', () => {
+    const many = buildPrompt({
+      question: 'Why this role?',
+      profile,
+      samples: [ans('Why us?', 'First past answer about mission.'), ans('Proud project?', 'Second past answer about a compiler.')],
+      background: [ans('', 'Third sample about robotics mentoring.')],
+    });
+    expect(many.system).toMatch(/one or two short paragraphs/i);
+    expect(many.system).toMatch(/never more than two paragraphs/i);
+    expect(many.system).toMatch(/ONE coherent answer/);
+    expect(many.system).toMatch(/Never list, stack or summarise several past answers/);
+    expect(many.system).toMatch(/choose the one or two experiences/i);
+    expect(many.system).toMatch(/no bullet or numbered lists/i);
+  });
+
+  it('never lets a generous form limit stretch the answer beyond the concise cap', () => {
+    const roomy = buildPrompt({ question: 'q', profile, samples: [], maxChars: 5000 });
+    expect(roomy.system).toContain('about 180 words or fewer');
+    const tight = buildPrompt({ question: 'q', profile, samples: [], maxChars: 280 });
+    expect(tight.system).toContain('about 40 words or fewer');
+    expect(buildPrompt({ question: 'q', profile, samples: [] }).system).toContain('about 150 words or fewer');
+  });
+
   it('forbids inventing experience and defines the insufficient-info escape hatch', () => {
     expect(out.system).toMatch(/never invent/i);
     expect(out.system).toContain(INSUFFICIENT);
@@ -164,6 +187,15 @@ describe('client', () => {
 
   it('turns the insufficient-info marker into a refusal to guess', async () => {
     expect(await generateAnswer(ok(INSUFFICIENT), req)).toMatchObject({ ok: false, kind: 'insufficient' });
+  });
+
+  it('keeps an answer to two paragraphs: extras are folded into the second, nothing is lost', async () => {
+    const long = 'One.\n\nTwo.\n\nThree.\n\nFour.';
+    expect(limitParagraphs(long)).toBe('One.\n\nTwo. Three. Four.');
+    expect(limitParagraphs('Only one paragraph\nwrapped across lines.')).toBe('Only one paragraph wrapped across lines.');
+    expect(limitParagraphs('A.\n\nB.')).toBe('A.\n\nB.');
+    const r = await generateAnswer(ok(long), req);
+    expect(r).toEqual({ ok: true, text: 'One.\n\nTwo. Three. Four.' });
   });
 
   it('reports a model refusal', async () => {

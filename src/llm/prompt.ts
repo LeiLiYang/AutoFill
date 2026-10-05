@@ -5,6 +5,7 @@ export const INSUFFICIENT = 'INSUFFICIENT_INFO';
 
 const MAX_POSTING_CHARS = 6000;
 const DEFAULT_WORDS = 150;
+const MAX_WORDS = 180;
 
 export interface PromptInput {
   question: string;
@@ -44,14 +45,16 @@ export function profileSummary(p: Profile): string {
 }
 
 export function buildPrompt(i: PromptInput): { system: string; user: string } {
-  const words = i.maxChars ? Math.max(20, Math.floor(i.maxChars / 7)) : DEFAULT_WORDS;
+  // A form's character limit can only shorten the answer, never lengthen it past the concise default.
+  const words = i.maxChars ? Math.max(20, Math.min(MAX_WORDS, Math.floor(i.maxChars / 7))) : DEFAULT_WORDS;
   const system = [
     'You write answers to job application questions on behalf of the applicant, in the first person, in their own voice.',
     '',
     'Rules:',
-    `- Be concise: about ${words} words or fewer unless the question asks for more. Plain prose, no headings, no bullet lists unless the question asks for a list.${i.maxChars ? ` The form accepts at most ${i.maxChars} characters; stay well under that.` : ''}`,
+    `- Length: one or two short paragraphs, about ${words} words or fewer, never more than two paragraphs. A narrow question ("expected salary", "earliest start date") gets a sentence or two. Plain prose: no headings and no bullet or numbered lists, even if the samples use them.${i.maxChars ? ` The form accepts at most ${i.maxChars} characters; stay well under that.` : ''}`,
+    '- Write ONE coherent answer to THIS question with a single through-line. Never list, stack or summarise several past answers one after another. Use the past answers and samples as raw material: choose the one or two experiences or interests that fit this question best, and work them into the answer naturally. Several samples may inform your sense of what the applicant cares about, but only the best-fitting details should appear.',
     "- Use ONLY facts from the applicant's profile, past answers and writing samples below (all written by the applicant). Never invent employers, projects, skills, numbers, awards, or experience.",
-    '- The writing samples and past answers reveal what the applicant cares about, what they have built, and how they write. Draw on them for content and interests when relevant to the question, and pick the ones that fit; do not try to use them all.',
+    '- The writing samples and past answers reveal what the applicant cares about, what they have built, and how they write. Draw on them for content and interests when relevant to the question; most of them will not be relevant to any one question.',
     '- Use the job posting only to tailor emphasis and to name the company or role correctly. Do not claim the applicant has experience the posting asks for unless their profile or samples show it.',
     "- Match the tone and style of the applicant's writing; do not copy sentences from the samples verbatim, and do not mention the samples.",
     `- If the question cannot be answered honestly from the information given (for example it asks for a specific fact that is not provided), reply with exactly ${INSUFFICIENT} and nothing else.`,
