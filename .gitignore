@@ -1,0 +1,15 @@
+node_modules/
+.output/
+.wxt/
+dist/
+coverage/
+test-results/
+playwright-report/
+
+# Personal data — never commit
+private/
+.env
+.env.*
+!.env.example
+*.pem
+*.crx
