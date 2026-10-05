@@ -62,6 +62,9 @@ export function fuzzyScore(a: string, b: string): number {
   return Math.max(dice(a, b), typoScore(a, b));
 }
 
+/** Words of a normalised string with a trailing plural "s" removed ("bachelors" → "bachelor"). */
+const stems = (s: string) => s.split(' ').filter(Boolean).map((w) => (w.length > 3 && w.endsWith('s') ? w.slice(0, -1) : w));
+
 /**
  * Score how well `text` equals/contains `target` as whole words (0..1).
  * Used for picking options: exact > word-prefix > word-contained > fuzzy.
@@ -73,6 +76,13 @@ export function optionScore(text: string, target: string): number {
   if (o === t) return 1;
   if (o.startsWith(`${t} `) || t.startsWith(`${o} `)) return 0.9;
   if (` ${o} `.includes(` ${t} `) || ` ${t} `.includes(` ${o} `)) return 0.75;
+
+  // Plural/possessive stems: "Bachelor" ⊂ "Bachelor's degree" (normalised to "bachelors degree").
+  const so = stems(o);
+  const st = stems(t);
+  if (st.length && st.every((w) => so.includes(w))) return so.length === st.length ? 0.95 : 0.78;
+  if (so.length && so.every((w) => st.includes(w))) return 0.72;
+
   const d = dice(o, t);
   return d >= 0.85 ? 0.6 + (d - 0.85) : 0;
 }

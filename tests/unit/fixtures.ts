@@ -33,7 +33,18 @@ export function testProfile(): Profile {
   return p;
 }
 
-export const fakeFile = () => new File(['%PDF'], 'cv.pdf', { type: 'application/pdf' });
+/** Four past internships (none current), as in a student profile; education says just "Bachelor". */
+export function fourInternshipsProfile(): Profile {
+  const p = testProfile();
+  const job = (company: string, title: string, y: number) => ({
+    company, title, location: 'Montreal, QC', startDate: `${y}-05`, endDate: `${y}-08`, current: false, description: `${company} work in ${y}.`,
+  });
+  p.experience = [job('Alpha Labs', 'SWE Intern', 2025), job('Beta Systems', 'Backend Intern', 2024), job('Gamma Cloud', 'Platform Intern', 2023), job('Delta Data', 'Data Intern', 2022)];
+  p.education = [{ school: 'Example University', degree: 'Bachelor', field: 'Computer Science', startDate: '2022-09', endDate: '2026-05', gpa: '', current: true }];
+  return p;
+}
+
+export const fakeFile =() => new File(['%PDF'], 'cv.pdf', { type: 'application/pdf' });
 
 export function fillWith(adapter: PlatformAdapter, url: string, profile = testProfile(), overwrite = false) {
   return runFill({

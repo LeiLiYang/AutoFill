@@ -21,10 +21,12 @@ export async function answerQuestion(deps: AnswerDeps, req: { question: string; 
   if (!apiKey) return { ok: false, kind: 'no-key', message: 'No Anthropic API key set.' };
 
   const [profile, posting] = await Promise.all([deps.loadProfile(), deps.getPosting()]);
+  const { qa, background } = styleSamples(req.question, profile.answerBank);
   const { system, user } = buildPrompt({
     question: req.question,
     profile,
-    samples: styleSamples(req.question, profile.answerBank),
+    samples: qa,
+    background,
     posting,
     maxChars: req.maxLength && req.maxLength > 0 ? req.maxLength : undefined,
   });

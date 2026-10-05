@@ -95,6 +95,24 @@ export function safeClick(el: Element): boolean {
   return true;
 }
 
+/**
+ * Click the element a real click on `el` would actually hit: the innermost element holding its
+ * text. Events bubble, so handlers on the option itself still fire, and handlers attached to an
+ * inner span (some widgets do this) now fire too. The same submit/CAPTCHA refusals apply.
+ */
+export function safeClickDeep(el: Element): boolean {
+  if (!isClickAllowed(el)) return false;
+  let target: Element = el;
+  const walker = el.ownerDocument.createTreeWalker(el, 4 /* NodeFilter.SHOW_TEXT */);
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    if (node.textContent?.trim() && node.parentElement) {
+      target = node.parentElement;
+      break;
+    }
+  }
+  return safeClick(isClickAllowed(target) ? target : el);
+}
+
 /** Dispatch only mousedown (react-select opens its menu on mousedown). */
 export function safeMouseDown(el: Element): boolean {
   if (!isClickAllowed(el)) return false;

@@ -28,6 +28,7 @@ export const MATCH_RULES: MatchRule[] = [
   { key: 'lastName', attrs: /^(last name|lname|family name|surname|last)$|\b(last name|family name|surname)\b/, label: /^(legal )?(last|family) name\b|^surname\b/, synonyms: ['last name', 'family name', 'surname', 'legal last name'] },
   { key: 'fullName', attrs: /^(name|full name|fullname|candidate name|your name)$/, label: /^(your |full |legal |candidate )?name$/, synonyms: ['full name', 'name', 'your name', 'legal name'] },
   { key: 'email', attrs: /\be ?mail\b/, label: /e ?mail/, synonyms: ['email', 'email address', 'e mail'] },
+  { key: 'phoneType', attrs: /phone (device )?type|device type/, label: /phone (device )?type|type of phone|phone type|device type/, synonyms: ['phone device type', 'phone type'] },
   { key: 'phone', attrs: /\b(tel|phone|mobile|telephone|cell)\b/, label: /phone|mobile|telephone|cell number/, not: /country code|extension|\btype\b|device/, synonyms: ['phone', 'phone number', 'mobile number', 'telephone'] },
   { key: 'linkedin', attrs: /linked ?in/, label: /linked ?in/, synonyms: ['linkedin', 'linkedin profile', 'linkedin url'] },
   { key: 'github', attrs: /git ?hub/, label: /git ?hub/, synonyms: ['github', 'github profile', 'github url'] },
@@ -45,7 +46,14 @@ export const MATCH_RULES: MatchRule[] = [
   { key: 'authorizedToWork', label: /(legally |currently )?(authori[sz]ed|eligible|permitted|legal right|legally entitled|work authori[sz]ation) .*work|right to work|work authori[sz]ation/, synonyms: [] },
   { key: 'requiresSponsorship', label: /sponsor|require .*visa|need .*visa|immigration/, synonyms: [] },
   { key: 'willingToRelocate', label: /relocat/, synonyms: [] },
-  { key: 'startDate', attrs: /start date|available date/, label: /(earliest |desired |expected )?start date|available to start|when can you start|availability date|date available/, synonyms: ['start date', 'available start date', 'earliest start date'] },
+  // Start/end month and year fields of education and work-experience entries. The field's `section`
+  // (education vs experience) decides whose dates they are. These must precede `startDate` below.
+  { key: 'startMonth', attrs: /\b(start|from)\b.*\bmonth\b|\bmonth\b.*\b(start|from)\b/, label: /\b(start|from)\b.*\bmonth\b|\bmonth\b.*\b(start|from)\b/, synonyms: ['start date month', 'start month', 'from month'] },
+  { key: 'startYear', attrs: /\b(start|from)\b.*\byear\b|\byear\b.*\b(start|from)\b|first year attended/, label: /\b(start|from)\b.*\byear\b|\byear\b.*\b(start|from)\b/, synonyms: ['start date year', 'start year', 'from year'] },
+  { key: 'endMonth', attrs: /\b(end|to)\b.*\bmonth\b|\bmonth\b.*\b(end|to)\b/, label: /\b(end|to)\b.*\bmonth\b|\bmonth\b.*\b(end|to)\b/, synonyms: ['end date month', 'end month', 'to month'] },
+  { key: 'endYear', attrs: /\b(end|to)\b.*\byear\b|\byear\b.*\b(end|to)\b|last year attended|graduation year/, label: /\b(end|to)\b.*\byear\b|\byear\b.*\b(end|to)\b|graduation year|year of graduation/, synonyms: ['end date year', 'end year', 'to year'] },
+  { key: 'expCurrent', attrs: /currently work here|current(ly)? (role|position|job)/, label: /currently work here|current(ly)? (work|working|employed) (here|there)|this is (my )?current (role|position|job)|i (currently )?work here|^current (role|position|job)\b/, synonyms: [] },
+  { key: 'startDate', attrs: /start date|available date/, not: /month|year|day/, label: /(earliest |desired |expected )?start date|available to start|when can you start|availability date|date available/, synonyms: ['start date', 'available start date', 'earliest start date'] },
   { key: 'salary', attrs: /salary|compensation/, label: /salary|compensation|pay expectation|expected pay/, synonyms: ['salary expectations', 'desired salary', 'expected salary'] },
   { key: 'noticePeriod', attrs: /notice period/, label: /notice period/, synonyms: ['notice period'] },
 

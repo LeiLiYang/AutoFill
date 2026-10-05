@@ -12,6 +12,7 @@ import { loadProfile, loadSettings, saveProfile, saveSettings } from '../../prof
 import { deleteFile, getFile, putFile } from '../../profile/files';
 import { exportBackup, importBackup } from '../../profile/importExport';
 import type { TestSheetsResult, ToBackground } from '../../messaging/protocol';
+import { splitSamples } from '../../llm/answerBank';
 import { pendingRows } from '../../tracking/localLog';
 import { queueAction, useRows } from '../../tracking/useRows';
 
@@ -134,6 +135,7 @@ export function App() {
               {text('contact.preferredName', 'Preferred name')}
               {text('contact.email', 'Email', 'email')}
               {text('contact.phone', 'Phone', 'tel')}
+              {text('contact.phoneType', 'Phone type (for “device type” dropdowns)')}
               {text('contact.pronouns', 'Pronouns')}
             </div>,
           )}
@@ -199,7 +201,15 @@ export function App() {
                 </label>
               </div>
               <div className="row">
-                {check('work.requiresSponsorship', 'I require visa sponsorship')}
+                {check('work.assumeAuthorized', 'Always answer “authorized to work” = Yes and “require sponsorship” = No')}
+              </div>
+              <small className="hint">
+                On: every work-authorization and sponsorship question gets those two answers, whatever
+                country it names. Check that this is true for the role before you click Fill. Off: answers
+                follow the country list and the checkbox below.
+              </small>
+              <div className="row">
+                {check('work.requiresSponsorship', 'I require visa sponsorship (used only when the box above is off)')}
                 {check('work.willingToRelocate', 'Willing to relocate')}
               </div>
             </>,
@@ -473,7 +483,16 @@ function Applications() {
 }
 
 function AnswerBank({ answers, onChange }: { answers: Answer[]; onChange: (a: Answer[]) => void }) {
-  const update = (i: number, patch: Partial<Answer>) =>
+  const [paste, setPaste] = useState('');
+  const addPasted = () => {
+    const now = new Date().toISOString();
+    onChange([
+      ...answers,
+      ...splitSamples(paste).map((answer) => ({ id: crypto.randomUUID(), question: '', answer, tags: [] as string[], updatedAt: now })),
+    ]);
+    setPaste('');
+  };
+  const update =(i: number, patch: Partial<Answer>) =>
     onChange(
       answers.map((a, j) => (j === i ? { ...a, ...patch, updatedAt: new Date().toISOString() } : a)),
     );
@@ -481,14 +500,33 @@ function AnswerBank({ answers, onChange }: { answers: Answer[]; onChange: (a: An
     <fieldset>
       <legend>Answer bank</legend>
       <small className="hint">
-        Past answers to open-ended questions. Used first for matching, and as style examples for
-        AI drafts.
+        Two kinds of entry. <strong>With a question</strong>: reused directly when a form asks
+        something similar. <strong>Without a question</strong> (a “writing sample”): background on
+        your experience, interests and voice. These are never pasted into forms; with an API key
+        they guide AI drafts for new questions. Don't have the original questions? Paste your
+        answers below.
       </small>
+      <div className="entry">
+        <label className="f">
+          Paste several answers without their questions (separate with a blank line, or a line of ---)
+          <textarea value={paste} onChange={(e) => setPaste(e.target.value)} style={{ minHeight: 110 }} />
+        </label>
+        <div className="row">
+          <button className="ghost" disabled={!splitSamples(paste).length} onClick={addPasted}>
+            Add {splitSamples(paste).length || ''} as writing sample{splitSamples(paste).length === 1 ? '' : 's'}
+          </button>
+        </div>
+      </div>
       {answers.map((a, i) => (
         <div className="entry" key={a.id}>
           <label className="f">
-            Question
-            <input type="text" value={a.question} onChange={(e) => update(i, { question: e.target.value })} />
+            Question {!a.question.trim() && <strong>· writing sample (no question)</strong>}
+            <input
+              type="text"
+              placeholder="Leave empty for a general writing sample"
+              value={a.question}
+              onChange={(e) => update(i, { question: e.target.value })}
+            />
           </label>
           <label className="f" style={{ marginTop: 8 }}>
             Answer
@@ -520,7 +558,7 @@ function AnswerBank({ answers, onChange }: { answers: Answer[]; onChange: (a: An
           ])
         }
       >
-        + Add answer
+        + Add answer or writing sample
       </button>
     </fieldset>
   );

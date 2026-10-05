@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Software Engineer @ Acme</title></head>
+<body>
+<!-- Class names are hashed and carry no "yesno" hint; the question label is not a <label>. -->
+<div class="ashby-application-form-container">
+  <form>
+    <div class="ashby-application-form-field-entry">
+      <label for="_systemfield_name">Name *</label><input id="_systemfield_name" name="_systemfield_name" type="text" required>
+    </div>
+
+    <div class="_entry_9f3a">
+      <div class="_title_1b2c">Are you legally authorized to work in the country in which this job is located? <span>*</span></div>
+      <div class="_group_77de" id="auth">
+        <button type="button" class="_btn_5a5a">Yes</button>
+        <button type="button" class="_btn_5a5a">No</button>
+      </div>
+    </div>
+
+    <div class="_entry_9f3a">
+      <div class="_title_1b2c">Will you now or in the future require sponsorship to work in this country? <span>*</span></div>
+      <div class="_group_77de" id="spons">
+        <button type="button" class="_btn_5a5a">Yes</button>
+        <button type="button" class="_btn_5a5a">No</button>
+      </div>
+    </div>
+
+    <div class="_entry_9f3a">
+      <div class="_title_1b2c">Are you open to relocating?</div>
+      <div class="_group_77de" id="reloc">
+        <button type="button" class="_btn_5a5a">Yes</button>
+        <button type="button" class="_btn_5a5a">No</button>
+      </div>
+    </div>
+
+    <button type="submit" id="ashby-submit">Submit Application</button>
+  </form>
+</div>
+<script>
+  // #auth: the click swaps a hashed class (state we cannot read by name, but the DOM visibly changes).
+  // #spons: nothing observable changes at all (the worst case: state kept in JS only).
+  // #reloc: a normal aria-pressed toggle.
+  const mode = { auth: 'class', spons: 'none', reloc: 'aria' };
+  document.querySelectorAll('._group_77de').forEach((group) => {
+    group.addEventListener('click', (e) => {
+      const btn = e.target.closest('button');
+      if (!btn) return;
+      if (mode[group.id] === 'class') {
+        group.querySelectorAll('button').forEach((b) => { b.className = b === btn ? '_btn_5a5a _k8x2' : '_btn_5a5a'; });
+      } else if (mode[group.id] === 'aria') {
+        group.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b === btn)));
+      }
+    });
+  });
+</script>
+</body>
+</html>

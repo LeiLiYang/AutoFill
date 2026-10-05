@@ -118,7 +118,20 @@ describe('runFill (generic adapter)', () => {
     expect(val('x')).toBe('Ada');
   });
 
-  it('answers country-specific work authorization correctly', async () => {
+  it('by default answers every authorization question Yes and every sponsorship question No', async () => {
+    mount(`
+      <fieldset><legend>Are you legally authorized to work in the United States?</legend>
+        <label><input type="radio" name="a" value="y"> Yes</label><label><input type="radio" name="a" value="n"> No</label></fieldset>
+      <fieldset><legend>Will you now or in the future require sponsorship to work?</legend>
+        <label><input type="radio" name="b" value="y"> Yes</label><label><input type="radio" name="b" value="n"> No</label></fieldset>`);
+    profile.work.requiresSponsorship = true; // ignored while "always authorized" is on
+    await run();
+    expect((document.querySelector('input[name=a][value=y]') as HTMLInputElement).checked).toBe(true);
+    expect((document.querySelector('input[name=b][value=n]') as HTMLInputElement).checked).toBe(true);
+  });
+
+  it('answers country-specific work authorization when "always authorized" is switched off', async () => {
+    profile.work.assumeAuthorized = false;
     profile.work.authorizedCountries = ['Canada'];
     mount(`
       <fieldset><legend>Are you legally authorized to work in Canada?</legend>

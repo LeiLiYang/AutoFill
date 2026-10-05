@@ -36,6 +36,15 @@ const STATUS_TEXT: Record<string, string> = {
   failed: 'could not fill',
 };
 
+/**
+ * Why a row needs attention. A specific reason (what a dropdown offered, that a click could not be
+ * confirmed, why an AI answer was not given) beats a generic status; routine outcomes stay short.
+ */
+function reasonFor(r: FieldReport): string {
+  const specific = ['unmatched', 'low-confidence', 'failed', 'ai'].includes(r.status) && r.detail;
+  return specific ? r.detail! : (STATUS_TEXT[r.status] ?? r.status);
+}
+
 export function Panel({ frames, filling, logOnly, prefill, onScroll, onSaveAnswers, onSavePosting, onLog, onClose }: PanelProps) {
   const [saved, setSaved] = useState<string | null>(null);
   const [showOther, setShowOther] = useState(false);
@@ -64,7 +73,7 @@ export function Panel({ frames, filling, logOnly, prefill, onScroll, onSaveAnswe
       <li key={`${frameId}:${report.id}`}>
         <button className={`row ${cls}`} onClick={() => onScroll(frameId, report.id)}>
           <span className="label">{report.label}</span>
-          <span className="why">{report.detail && report.status === 'unmatched' ? report.detail : STATUS_TEXT[report.status]}</span>
+          <span className="why">{reasonFor(report)}</span>
         </button>
       </li>
     ));

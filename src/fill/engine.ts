@@ -4,7 +4,9 @@ import type {
   FieldReport,
   FillOptions,
   FillStatus,
+  Match,
   PlatformAdapter,
+  ProfileKey,
 } from '../adapters/types';
 import { hasValue } from '../detect/descriptor';
 import { matchField } from '../detect/match';
@@ -38,13 +40,44 @@ function preview(text: string): string {
   return text.length > 60 ? `${text.slice(0, 57)}…` : text;
 }
 
+/**
+ * Keys that belong to a repeated section (Work Experience 1, 2, 3 …; Education 1, 2 …).
+ * When one of them appears more than once on the page, the n-th occurrence belongs to the n-th
+ * entry in the profile. Counting by page order works on every site, whatever its ids look like
+ * (Workday numbers its sections from arbitrary offsets, Greenhouse suffixes `--0`, `--1`).
+ */
+const REPEATED_KEYS = new Set<ProfileKey>([
+  'currentCompany', 'currentTitle', 'expLocation', 'expDescription', 'expCurrent',
+  'startMonth', 'startYear', 'endMonth', 'endYear',
+  'expStartMonth', 'expStartYear', 'expEndMonth', 'expEndYear',
+  'school', 'degree', 'field', 'gpa', 'eduStartYear', 'eduEndYear',
+]);
+
+export function assignEntryIndexes(fields: FieldDescriptor[], matches: (Match | null)[]): void {
+  const groups = new Map<string, FieldDescriptor[]>();
+  fields.forEach((d, i) => {
+    const m = matches[i];
+    if (!m || m.key === 'freeText' || !REPEATED_KEYS.has(m.key) || d.entryIndex != null) return;
+    // Dates are separate series per section: education's first start year is not experience's.
+    const bucket = /^(start|end)/.test(m.key) ? `${m.key}:${d.section ?? 'experience'}` : m.key;
+    groups.set(bucket, [...(groups.get(bucket) ?? []), d]);
+  });
+  for (const members of groups.values()) {
+    // A single occurrence is not a repeated section: leave it unindexed (current job / first education).
+    if (members.length < 2) continue;
+    members.forEach((d, n) => (d.entryIndex = n));
+  }
+}
+
 export async function runFill({ adapter, ctx, profile, options }: RunFillInput): Promise<FillRun> {
   const fields = adapter.getFields(ctx);
+  const matches = fields.map((d) => matchField(d));
+  assignEntryIndexes(fields, matches);
   const reports: FieldReport[] = [];
   const descriptors = new Map<string, FieldDescriptor>();
   const generated = new Map<string, string>();
 
-  for (const d of fields) {
+  for (const [i, d] of fields.entries()) {
     descriptors.set(d.id, d);
     const label = d.label || d.ariaLabel || d.placeholder || d.nearbyText?.slice(0, 80) || d.name || '(unlabeled)';
     const base = { id: d.id, label, kind: d.kind, required: d.required };
@@ -54,7 +87,7 @@ export async function runFill({ adapter, ctx, profile, options }: RunFillInput):
       reports.push({ ...base, confidence: 0, status, emptyRequired, ...extra });
     };
 
-    const match = matchField(d);
+    const match = matches[i] ?? null;
     if (!match) {
       report('unmatched');
       continue;

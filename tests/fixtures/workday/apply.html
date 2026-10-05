@@ -42,7 +42,7 @@
     <div data-automation-id="formField-phone-device-type">
       <label id="pdt-label" for="pdt">Phone Device Type<span>*</span></label>
       <button id="pdt" type="button" data-automation-id="phone-device-type" aria-haspopup="listbox" aria-labelledby="pdt-label"
-              data-options="Mobile|Home|Work">Select One</button>
+              data-options="Home|Mobile|Work">Select One</button>
     </div>
     <div data-automation-id="formField-country-phone-code">
       <label id="cpc-label" for="cpc">Country Phone Code<span>*</span></label>
@@ -65,75 +65,15 @@
   <!-- ===================== Step 2: My Experience (hidden until Next) ===================== -->
   <section id="step2" data-step="2" style="display:none">
     <h2>My Experience</h2>
-
-    <div data-automation-id="workExperience-1">
-      <h3>Work Experience 1</h3>
-      <div data-automation-id="formField-jobTitle">
-        <label for="jt1">Job Title<span>*</span></label>
-        <input id="jt1" data-automation-id="jobTitle" type="text" aria-required="true">
-      </div>
-      <div data-automation-id="formField-companyName">
-        <label for="co1">Company<span>*</span></label>
-        <input id="co1" data-automation-id="companyName" type="text" aria-required="true">
-      </div>
-      <div data-automation-id="formField-location">
-        <label for="loc1">Location</label>
-        <input id="loc1" data-automation-id="location" type="text">
-      </div>
-      <div data-automation-id="formField-currentlyWorkHere">
-        <input id="cur1" data-automation-id="currentlyWorkHere" type="checkbox">
-        <label for="cur1">I currently work here</label>
-      </div>
-      <div data-automation-id="formField-startDate">
-        <label>From</label>
-        <input data-automation-id="dateSectionMonth-input" id="sm1" type="text" placeholder="MM" aria-label="Month">
-        <input data-automation-id="dateSectionYear-input" id="sy1" type="text" placeholder="YYYY" aria-label="Year">
-      </div>
-      <div data-automation-id="formField-endDate">
-        <label>To</label>
-        <input data-automation-id="dateSectionMonth-input" id="em1" type="text" placeholder="MM" aria-label="Month">
-        <input data-automation-id="dateSectionYear-input" id="ey1" type="text" placeholder="YYYY" aria-label="Year">
-      </div>
-      <div data-automation-id="formField-roleDescription">
-        <label for="rd1">Role Description</label>
-        <textarea id="rd1" data-automation-id="roleDescription"></textarea>
-      </div>
-    </div>
-
-    <div data-automation-id="workExperience-2">
-      <h3>Work Experience 2</h3>
-      <div data-automation-id="formField-jobTitle">
-        <label for="jt2">Job Title<span>*</span></label>
-        <input id="jt2" data-automation-id="jobTitle" type="text" aria-required="true">
-      </div>
-      <div data-automation-id="formField-companyName">
-        <label for="co2">Company<span>*</span></label>
-        <input id="co2" data-automation-id="companyName" type="text" aria-required="true">
-      </div>
-    </div>
-
-    <div data-automation-id="education-1">
-      <h3>Education 1</h3>
-      <div data-automation-id="formField-schoolName">
-        <label for="sch1">School or University<span>*</span></label>
-        <input id="sch1" data-automation-id="schoolName" type="text" aria-required="true">
-      </div>
-      <div data-automation-id="formField-degree">
-        <label id="deg-label" for="deg1">Degree</label>
-        <button id="deg1" type="button" data-automation-id="degree" aria-haspopup="listbox" aria-labelledby="deg-label"
-                data-options="High School|Bachelor's Degree|BSc|Master's Degree">Select One</button>
-      </div>
-      <div data-automation-id="formField-lastYearAttended">
-        <label>Last Year Attended</label>
-        <input data-automation-id="dateSectionYear-input" id="ly1" type="text" placeholder="YYYY" aria-label="Year">
-      </div>
-    </div>
+    <div id="work-sections"></div>
+    <div id="education-sections"></div>
 
     <div data-automation-id="resumeSection">
       <label>Resume/CV</label>
-      <div data-automation-id="file-upload-drop-zone">
+      <div data-automation-id="file-upload-drop-zone" id="dropzone">
         <input type="file" data-automation-id="file-upload-input-ref" id="resume-input" style="display:none">
         <button type="button">Select files</button>
+        <span id="file-name"></span>
       </div>
     </div>
 
@@ -144,6 +84,49 @@
 <script>
   window.__syntheticNextClicks = 0;
   window.__nextClicks = 0;
+
+  // Work-experience sections as Workday renders them: ids like "workExperience-4--jobTitle", numbered
+  // from an arbitrary offset (the page does not start at 1 once sections have been added or removed).
+  const monthBox = (id, prefix, which, part) => `
+    <input id="${id}" data-automation-id="dateSection${part}-input" type="text" placeholder="${part === 'Month' ? 'MM' : 'YYYY'}">`;
+  const workSection = (n, label) => `
+    <div data-automation-id="workExperience-${n}" id="workExperience-${n}">
+      <h3>${label}</h3>
+      <div data-automation-id="formField-jobTitle"><label for="workExperience-${n}--jobTitle">Job Title<span>*</span></label>
+        <input id="workExperience-${n}--jobTitle" data-automation-id="jobTitle" type="text" aria-required="true"></div>
+      <div data-automation-id="formField-companyName"><label for="workExperience-${n}--companyName">Company<span>*</span></label>
+        <input id="workExperience-${n}--companyName" data-automation-id="companyName" type="text" aria-required="true"></div>
+      <div data-automation-id="formField-location"><label for="workExperience-${n}--location">Location</label>
+        <input id="workExperience-${n}--location" data-automation-id="location" type="text"></div>
+      <div data-automation-id="formField-currentlyWorkHere">
+        <input id="workExperience-${n}--currentlyWorkHere" data-automation-id="currentlyWorkHere" type="checkbox">
+        <label for="workExperience-${n}--currentlyWorkHere">I currently work here</label></div>
+      <div data-automation-id="formField-startDate"><label>From</label>
+        ${monthBox(`workExperience-${n}--startDate-dateSectionMonth-input`, 'start', 'start', 'Month')}
+        ${monthBox(`workExperience-${n}--startDate-dateSectionYear-input`, 'start', 'start', 'Year')}</div>
+      <div data-automation-id="formField-endDate"><label>To (Actual or Expected)</label>
+        ${monthBox(`workExperience-${n}--endDate-dateSectionMonth-input`, 'end', 'end', 'Month')}
+        ${monthBox(`workExperience-${n}--endDate-dateSectionYear-input`, 'end', 'end', 'Year')}</div>
+      <div data-automation-id="formField-roleDescription"><label for="workExperience-${n}--roleDescription">Role Description</label>
+        <textarea id="workExperience-${n}--roleDescription" data-automation-id="roleDescription"></textarea></div>
+    </div>`;
+  document.getElementById('work-sections').innerHTML = [4, 5, 6, 7].map((n, i) => workSection(n, `Work Experience ${i + 1}`)).join('');
+
+  document.getElementById('education-sections').innerHTML = `
+    <div data-automation-id="education-2" id="education-2">
+      <h3>Education 1</h3>
+      <div data-automation-id="formField-schoolName"><label for="education-2--schoolName">School or University<span>*</span></label>
+        <input id="education-2--schoolName" data-automation-id="schoolName" type="text" aria-required="true"></div>
+      <div data-automation-id="formField-degree"><label id="deg-label" for="education-2--degree">Degree</label>
+        <button id="education-2--degree" type="button" data-automation-id="degree" aria-haspopup="listbox" aria-labelledby="deg-label"
+                data-options="High School|Associate's Degree|Bachelor's Degree|Master's Degree|Doctorate">Select One</button></div>
+      <div data-automation-id="formField-fieldOfStudy"><label for="education-2--fieldOfStudy">Field of Study</label>
+        <input id="education-2--fieldOfStudy" data-automation-id="fieldOfStudy" type="text"></div>
+      <div data-automation-id="formField-firstYearAttended"><label>From</label>
+        <input id="education-2--firstYearAttended-dateSectionYear-input" data-automation-id="dateSectionYear-input" type="text" placeholder="YYYY"></div>
+      <div data-automation-id="formField-lastYearAttended"><label>To (Actual or Expected)</label>
+        <input id="education-2--lastYearAttended-dateSectionYear-input" data-automation-id="dateSectionYear-input" type="text" placeholder="YYYY"></div>
+    </div>`;
 
   // Next / Save and Continue: only a real (trusted) user click advances; synthetic clicks are counted.
   document.querySelectorAll('[data-automation-id="bottom-navigation-next-button"]').forEach((b) =>
@@ -158,25 +141,44 @@
   );
 
   // Workday-style listbox buttons: open a portal listbox; picking an option writes its text into the button.
-  document.querySelectorAll('button[aria-haspopup="listbox"]').forEach((btn) =>
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('ul[role="listbox"]').forEach((u) => u.remove());
-      const ul = document.createElement('ul');
-      ul.setAttribute('role', 'listbox');
-      for (const text of btn.dataset.options.split('|')) {
-        const li = document.createElement('li');
-        li.setAttribute('role', 'option');
-        li.setAttribute('data-automation-id', 'promptOption');
-        li.textContent = text;
-        li.addEventListener('click', () => {
-          btn.textContent = text;
-          ul.remove();
-        });
-        ul.appendChild(li);
-      }
-      document.body.appendChild(ul);
-    }),
-  );
+  // The option text sits in an inner span and ONLY that span has the click handler, like some real widgets.
+  if (!window.__wdListboxInstalled) document.addEventListener('click', (e) => {
+    const btn = e.target.closest('button[aria-haspopup="listbox"]');
+    if (!btn) return;
+    document.querySelectorAll('ul[role="listbox"]').forEach((u) => u.remove());
+    const ul = document.createElement('ul');
+    ul.setAttribute('role', 'listbox');
+    for (const text of btn.dataset.options.split('|')) {
+      const li = document.createElement('li');
+      li.setAttribute('role', 'option');
+      li.setAttribute('data-automation-id', 'promptOption');
+      const span = document.createElement('span');
+      span.textContent = text;
+      span.addEventListener('click', () => {
+        btn.textContent = text;
+        ul.remove();
+      });
+      li.appendChild(span);
+      ul.appendChild(li);
+    }
+    document.body.appendChild(ul);
+  });
+  window.__wdListboxInstalled = true;
+
+  // Resume upload: shows the file name once it has been accepted. In "drop-only" mode (as on some real
+  // Workday pages) the hidden input's change event is ignored and only a drop on the zone counts.
+  const input = document.getElementById('resume-input');
+  const zone = document.getElementById('dropzone');
+  const shown = document.getElementById('file-name');
+  input.addEventListener('change', () => {
+    if (window.__uploadMode !== 'drop-only' && input.files[0]) shown.textContent = input.files[0].name;
+  });
+  zone.addEventListener('dragover', (e) => e.preventDefault());
+  zone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    if (f) shown.textContent = f.name;
+  });
 </script>
 </body>
 </html>

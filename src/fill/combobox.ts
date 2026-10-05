@@ -1,7 +1,7 @@
 import type { FieldOption } from '../adapters/types';
 import { normalize } from '../detect/normalize';
 import { MIN_OPTION_SCORE, pickOption } from './choice';
-import { safeClick, safeKey, safeMouseDown } from './safety';
+import { safeClick, safeClickDeep, safeKey, safeMouseDown } from './safety';
 import { dispatchInput, setNativeValue } from './text';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -29,8 +29,10 @@ function visibleOptions(input: HTMLElement): HTMLElement[] {
   );
 }
 
+const optionText = (e: HTMLElement) => (e.textContent ?? '').replace(/\s+/g, ' ').trim();
+
 const toFieldOptions = (els: HTMLElement[]): FieldOption[] =>
-  els.map((e) => ({ text: (e.textContent ?? '').trim(), value: e.getAttribute('data-value') ?? e.id, element: e }));
+  els.map((e) => ({ text: optionText(e), value: e.getAttribute('data-value') ?? e.id, element: e }));
 
 function typeInto(input: HTMLElement, text: string) {
   if (input instanceof HTMLInputElement) {
@@ -48,14 +50,19 @@ function showsValue(input: HTMLElement, optionText: string): boolean {
   return (!!n && (text.includes(n) || typed === n));
 }
 
+export interface ComboboxResult {
+  ok: boolean;
+  chosen?: string;
+  score?: number;
+  /** What the dropdown actually offered, so a failure can say why nothing matched. */
+  offered?: string[];
+}
+
 /**
- * Open a custom dropdown (react-select, Workday listbox, ...), search for the target, and click
+ * Open a custom dropdown (react-select, Workday listboxes, ...), search for the target, and select
  * the matching option with simulated user events. Never presses Enter outside the combobox.
  */
-export async function fillCombobox(
-  input: HTMLElement,
-  targets: string[],
-): Promise<{ ok: boolean; chosen?: string; score?: number }> {
+export async function fillCombobox(input: HTMLElement, targets: string[]): Promise<ComboboxResult> {
   const control = input.closest<HTMLElement>('[class*="control" i]') ?? input;
 
   // Options already on screen before we open this control belong to some other (possibly stuck-open)
@@ -86,15 +93,25 @@ export async function fillCombobox(
   }
 
   if (!picked || picked.score < MIN_OPTION_SCORE) {
+    const offered = els.map(optionText).slice(0, 12);
     typeInto(input, '');
     safeKey(input, 'Escape');
-    return { ok: false };
+    return { ok: false, offered };
   }
 
   const optionEl = picked.option.element!;
-  safeClick(optionEl);
-  await sleep(60);
-  const ok = showsValue(input, picked.option.text) || !ours().includes(optionEl);
+  const selected = () => showsValue(input, picked!.option.text) || !ours().includes(optionEl);
+
+  safeClickDeep(optionEl);
+  await sleep(80);
+  let ok = selected();
+  if (!ok) {
+    // Some listboxes select on keyboard activation only: hover the option, then press Enter on it.
+    optionEl.dispatchEvent(new (optionEl.ownerDocument.defaultView as any).MouseEvent('mouseover', { bubbles: true }));
+    safeKey(optionEl, 'Enter');
+    await sleep(80);
+    ok = selected();
+  }
   if (!ok) safeKey(input, 'Escape');
-  return { ok, chosen: picked.option.text, score: picked.score };
+  return { ok, chosen: picked.option.text, score: picked.score, offered: els.map(optionText).slice(0, 12) };
 }

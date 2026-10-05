@@ -44,6 +44,8 @@ export const ProfileSchema = z.object({
       preferredName: str,
       email: str,
       phone: str,
+      /** Answer for "phone device type" dropdowns. */
+      phoneType: z.string().default('Mobile'),
       pronouns: str,
     })
     .default({}),
@@ -68,6 +70,12 @@ export const ProfileSchema = z.object({
   work: z
     .object({
       authorizedCountries: z.array(z.string()).default([]),
+      /**
+       * When on (the default), every "are you authorized to work…" question is answered Yes and every
+       * "will you require sponsorship…" question is answered No, whatever country it names. Turn it off
+       * to answer per country from `authorizedCountries` / `requiresSponsorship`.
+       */
+      assumeAuthorized: z.boolean().default(true),
       requiresSponsorship: z.boolean().default(false),
       willingToRelocate: z.boolean().default(false),
       startDate: str,

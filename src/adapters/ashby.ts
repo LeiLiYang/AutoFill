@@ -9,35 +9,62 @@ import type { FieldDescriptor, FieldOption, PlatformAdapter } from './types';
  * like `_systemfield_name`, and whose Yes/No questions are pairs of buttons rather than radios.
  */
 const FORM_ROOTS = ['.ashby-application-form-container', 'form[class*="application" i]', 'main form', 'form'];
-const YES_NO_GROUP = '[class*="_yesno_" i], [class*="yesno" i]';
+const YES_NO_CLASS = '[class*="_yesno_" i], [class*="yesno" i]';
+const isYesNoText = (b: Element) => /^(yes|no)$/i.test((b.textContent ?? '').trim());
 
-const questionLabel = (group: Element): string => {
-  const entry = group.closest('.ashby-application-form-field-entry, [class*="fieldEntry" i], fieldset') ?? group.parentElement;
-  const l = entry?.querySelector('label, legend, [class*="questionTitle" i], [class*="question-title" i]');
-  return (l?.textContent ?? '').replace(/\s+/g, ' ').replace(/[*✱]\s*$/, '').trim();
-};
-
-/** Yes/No button groups: described as radio groups so the shared choice logic can drive them. */
-function buttonGroups(root: ParentNode, startIndex: number): FieldDescriptor[] {
-  const out: FieldDescriptor[] = [];
-  let n = startIndex;
-  for (const group of Array.from(root.querySelectorAll<HTMLElement>(YES_NO_GROUP))) {
-    const buttons = Array.from(group.querySelectorAll<HTMLElement>('button, [role="radio"]'));
-    if (buttons.length < 2) continue;
-    const options: FieldOption[] = buttons.map((b) => ({ text: (b.textContent ?? '').trim(), value: (b.textContent ?? '').trim(), element: b }));
-    const label = questionLabel(group);
-    const raw = group.closest('.ashby-application-form-field-entry')?.querySelector('label')?.textContent ?? '';
-    out.push({
-      id: `ab${n++}`,
-      element: group,
-      kind: 'radio',
-      label,
-      options,
-      required: /[*✱]\s*$/.test(raw.trim()) || !!group.closest('[class*="required" i]'),
-      currentValue: buttons.some((b) => isOptionSelected(b)) ? 'checked' : '',
-    });
+/**
+ * Yes/No button groups: a class-named container, or (class names are hashed and change) any parent
+ * whose only buttons read exactly "Yes" and "No".
+ */
+function findYesNoGroups(root: ParentNode): HTMLElement[] {
+  const groups = new Set<HTMLElement>(Array.from(root.querySelectorAll<HTMLElement>(YES_NO_CLASS)));
+  for (const b of Array.from(root.querySelectorAll<HTMLElement>('button, [role="radio"]'))) {
+    const parent = b.parentElement;
+    if (!parent || !isYesNoText(b)) continue;
+    const buttons = Array.from(parent.querySelectorAll<HTMLElement>('button, [role="radio"]'));
+    const texts = buttons.map((x) => (x.textContent ?? '').trim().toLowerCase()).sort();
+    if (buttons.length === 2 && texts[0] === 'no' && texts[1] === 'yes') groups.add(parent);
   }
-  return out;
+  // Keep the outermost container only.
+  return [...groups].filter((g) => ![...groups].some((o) => o !== g && o.contains(g)));
+}
+
+const squash = (s: string) => s.replace(/\s+/g, ' ').trim();
+const clean = (s: string) => squash(s).replace(/[*✱]\s*$/, '').trim();
+
+/**
+ * The raw question text for a group (a trailing * marks it required): its entry's label/legend/title,
+ * else the closest text just above it.
+ */
+function questionText(group: HTMLElement): string {
+  const entry = group.closest('.ashby-application-form-field-entry, [class*="fieldEntry" i], fieldset');
+  const inEntry = entry?.querySelector('label, legend, [class*="questionTitle" i], [class*="question-title" i]');
+  if (inEntry?.textContent?.trim()) return squash(inEntry.textContent);
+
+  for (let n: HTMLElement | null = group, up = 0; n && up < 4; n = n.parentElement, up++) {
+    for (let prev = n.previousElementSibling; prev; prev = prev.previousElementSibling) {
+      const t = squash(prev.textContent ?? '');
+      if (t && t.length < 400) return t;
+    }
+  }
+  return '';
+}
+
+function buttonGroups(groups: HTMLElement[], startIndex: number): FieldDescriptor[] {
+  return groups.map((group, i) => {
+    const buttons = Array.from(group.querySelectorAll<HTMLElement>('button, [role="radio"]'));
+    const options: FieldOption[] = buttons.map((b) => ({ text: (b.textContent ?? '').trim(), value: (b.textContent ?? '').trim(), element: b }));
+    const raw = questionText(group);
+    return {
+      id: `ab${startIndex + i}`,
+      element: group,
+      kind: 'radio' as const,
+      label: clean(raw),
+      options,
+      required: /[*✱]\s*$/.test(raw) || !!group.closest('[class*="required" i]'),
+      currentValue: buttons.some((b) => isOptionSelected(b)) ? 'checked' : '',
+    };
+  });
 }
 
 export const ashbyAdapter: PlatformAdapter = {
@@ -51,9 +78,9 @@ export const ashbyAdapter: PlatformAdapter = {
 
   getFields(ctx) {
     const root = FORM_ROOTS.map((s) => ctx.doc.querySelector(s)).find(Boolean) ?? ctx.doc;
-    const base = buildDescriptors(root, ctx.doc)
-      // The Yes/No buttons are not form controls, but the file picker's helper buttons must not appear either.
-      .filter((d) => !d.element.closest(YES_NO_GROUP));
+    const groups = findYesNoGroups(root);
+    // The Yes/No buttons are not form controls; the file picker's helper buttons must not appear either.
+    const base = buildDescriptors(root, ctx.doc).filter((d) => !groups.some((g) => g.contains(d.element)));
     const withHints = applyHints(base, [
       // ids look like "_systemfield_name" → "systemfield name"
       { attr: /^systemfield name$/, key: 'fullName' },
@@ -61,7 +88,7 @@ export const ashbyAdapter: PlatformAdapter = {
       { attr: /^systemfield resume$/, key: 'resume', only: ['file'] },
       { attr: /^systemfield location$/, key: 'location', only: ['text', 'combobox'] },
     ]);
-    return [...withHints, ...buttonGroups(root, withHints.length)];
+    return [...withHints, ...buttonGroups(groups, withHints.length)];
   },
 
   fill: defaultFill,

@@ -48,13 +48,21 @@ export async function savePosting(tabId: number, deps: SaveDeps): Promise<SavePo
     const warnings: string[] = [];
 
     // The snapshot is the most failure-prone (restricted pages, size): do not let it block the others.
-    try {
-      const mhtml = await chrome.pageCapture.saveAsMHTML({ tabId });
-      if (!mhtml) throw new Error('Chrome returned no snapshot');
-      files.push(await downloadBlob(`${folder}/posting.mhtml`, mhtml, 'multipart/related'));
-    } catch (e) {
-      warnings.push(`posting.mhtml was not saved: ${(e as Error).message}`);
+    // Page capture can fail transiently (the tab is busy or another capture is finishing): try twice.
+    let lastError = '';
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const mhtml = await chrome.pageCapture.saveAsMHTML({ tabId });
+        if (!mhtml) throw new Error('Chrome returned no snapshot');
+        files.push(await downloadBlob(`${folder}/posting.mhtml`, mhtml, 'multipart/related'));
+        lastError = '';
+        break;
+      } catch (e) {
+        lastError = (e as Error).message;
+        await new Promise((r) => setTimeout(r, 600));
+      }
     }
+    if (lastError) warnings.push(`posting.mhtml was not saved: ${lastError}`);
     files.push(await downloadText(`${folder}/posting.md`, buildPostingMarkdown(posting, date), 'text/markdown'));
     files.push(await downloadText(`${folder}/answers.json`, buildAnswersJson(posting, answers, date), 'application/json'));
 

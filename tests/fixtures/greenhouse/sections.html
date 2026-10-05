@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Job Application for Backend Engineer at Acme</title></head>
+<body>
+<main>
+  <h1>Backend Engineer</h1>
+  <form id="application_form">
+    <div class="field"><label for="first_name">First Name</label><input id="first_name" type="text" required></div>
+
+    <!-- Education: degree and months are react-select dropdowns, the year is a text input -->
+    <section class="education--container">
+      <h3>Education</h3>
+      <div class="field"><label id="school--0-label" for="school--0">School</label>
+        <div class="select__control" data-options="Example University|McGill University|University of Toronto"><div class="select__single-value"></div>
+          <input id="school--0" class="select__input" role="combobox" aria-haspopup="listbox" aria-autocomplete="list" aria-labelledby="school--0-label"></div></div>
+      <div class="field"><label id="degree--0-label" for="degree--0">Degree</label>
+        <div class="select__control" data-options="High school or equivalent|Associate's degree|Bachelor's degree|Master's degree|Doctorate"><div class="select__single-value"></div>
+          <input id="degree--0" class="select__input" role="combobox" aria-haspopup="listbox" aria-autocomplete="list" aria-labelledby="degree--0-label"></div></div>
+      <div class="field"><label id="discipline--0-label" for="discipline--0">Discipline</label>
+        <div class="select__control" data-options="Biology|Computer Science|Mathematics"><div class="select__single-value"></div>
+          <input id="discipline--0" class="select__input" role="combobox" aria-haspopup="listbox" aria-autocomplete="list" aria-labelledby="discipline--0-label"></div></div>
+      <div class="field"><label id="start-month--0-label" for="start-month--0">Start date month</label>
+        <div class="select__control" data-options="January|February|March|April|May|June|July|August|September|October|November|December"><div class="select__single-value"></div>
+          <input id="start-month--0" class="select__input" role="combobox" aria-haspopup="listbox" aria-autocomplete="list" aria-labelledby="start-month--0-label"></div></div>
+      <div class="field"><label for="start-year--0">Start date year</label><input id="start-year--0" type="text"></div>
+      <div class="field"><label id="end-month--0-label" for="end-month--0">End date month</label>
+        <div class="select__control" data-options="January|February|March|April|May|June|July|August|September|October|November|December"><div class="select__single-value"></div>
+          <input id="end-month--0" class="select__input" role="combobox" aria-haspopup="listbox" aria-autocomplete="list" aria-labelledby="end-month--0-label"></div></div>
+      <div class="field"><label for="end-year--0">End date year</label><input id="end-year--0" type="text"></div>
+    </section>
+
+    <!-- Employment: two entries -->
+    <section class="employment--container">
+      <h3>Employment</h3>
+      <div class="employment--entry">
+        <div class="field"><label for="company-name-0">Company name</label><input id="company-name-0" type="text"></div>
+        <div class="field"><label for="title-0">Job title</label><input id="title-0" type="text"></div>
+        <div class="field"><label id="emp-start-month-0-label" for="emp-start-month-0">Start date month</label>
+          <div class="select__control" data-options="January|February|March|April|May|June|July|August|September|October|November|December"><div class="select__single-value"></div>
+            <input id="emp-start-month-0" class="select__input" role="combobox" aria-haspopup="listbox" aria-autocomplete="list" aria-labelledby="emp-start-month-0-label"></div></div>
+        <div class="field"><label for="emp-start-year-0">Start date year</label><input id="emp-start-year-0" type="text"></div>
+        <div class="field"><label id="emp-end-month-0-label" for="emp-end-month-0">End date month</label>
+          <div class="select__control" data-options="January|February|March|April|May|June|July|August|September|October|November|December"><div class="select__single-value"></div>
+            <input id="emp-end-month-0" class="select__input" role="combobox" aria-haspopup="listbox" aria-autocomplete="list" aria-labelledby="emp-end-month-0-label"></div></div>
+        <div class="field"><label for="emp-end-year-0">End date year</label><input id="emp-end-year-0" type="text"></div>
+        <div class="field"><input id="current-role-0" type="checkbox"><label for="current-role-0">Current role</label></div>
+      </div>
+      <div class="employment--entry">
+        <div class="field"><label for="company-name-1">Company name</label><input id="company-name-1" type="text"></div>
+        <div class="field"><label for="title-1">Job title</label><input id="title-1" type="text"></div>
+        <div class="field"><label id="emp-start-month-1-label" for="emp-start-month-1">Start date month</label>
+          <div class="select__control" data-options="January|February|March|April|May|June|July|August|September|October|November|December"><div class="select__single-value"></div>
+            <input id="emp-start-month-1" class="select__input" role="combobox" aria-haspopup="listbox" aria-autocomplete="list" aria-labelledby="emp-start-month-1-label"></div></div>
+        <div class="field"><label for="emp-start-year-1">Start date year</label><input id="emp-start-year-1" type="text"></div>
+        <div class="field"><label id="emp-end-month-1-label" for="emp-end-month-1">End date month</label>
+          <div class="select__control" data-options="January|February|March|April|May|June|July|August|September|October|November|December"><div class="select__single-value"></div>
+            <input id="emp-end-month-1" class="select__input" role="combobox" aria-haspopup="listbox" aria-autocomplete="list" aria-labelledby="emp-end-month-1-label"></div></div>
+        <div class="field"><label for="emp-end-year-1">End date year</label><input id="emp-end-year-1" type="text"></div>
+      </div>
+    </section>
+
+    <button type="submit" id="submit">Submit application</button>
+  </form>
+</main>
+<script>
+  // react-select-like dropdowns: open a portal menu on mousedown, filter on typing, select on click.
+  document.querySelectorAll('.select__control').forEach((ctl) => {
+    const input = ctl.querySelector('input');
+    const value = ctl.querySelector('.select__single-value');
+    const options = ctl.dataset.options.split('|');
+    const render = () => {
+      document.querySelectorAll('.select__menu').forEach((m) => m.remove());
+      const menu = document.createElement('div');
+      menu.className = 'select__menu';
+      menu.setAttribute('role', 'listbox');
+      for (const text of options.filter((o) => o.toLowerCase().includes(input.value.toLowerCase()))) {
+        const o = document.createElement('div');
+        o.setAttribute('role', 'option');
+        o.textContent = text;
+        o.addEventListener('click', () => {
+          value.textContent = text;
+          input.value = '';
+          menu.remove();
+        });
+        menu.appendChild(o);
+      }
+      document.body.appendChild(menu);
+    };
+    ctl.addEventListener('mousedown', render);
+    input.addEventListener('input', render);
+  });
+</script>
+</body>
+</html>

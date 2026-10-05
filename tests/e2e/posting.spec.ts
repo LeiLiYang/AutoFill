@@ -32,8 +32,8 @@ test('saves posting.mhtml, posting.md and answers.json for a filled application'
   const result = await savePosting(ext, page);
   expect(result.ok).toBe(true);
   expect(result.folder).toBe(`AutoFill/Acme Corp/${today()} Backend Engineer`);
+  expect(result.warnings, 'warnings explain a missing file').toEqual([]);
   expect(result.files.map((f: { name: string }) => f.name).sort()).toEqual(['answers.json', 'posting.md', 'posting.mhtml']);
-  expect(result.warnings).toEqual([]);
 
   // Every download completed with content on disk.
   const byName = Object.fromEntries(result.files.map((f: { name: string; path: string }) => [f.name, f.path]));

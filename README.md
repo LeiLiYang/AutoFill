@@ -35,10 +35,13 @@ Pin the toolbar icon, and check the shortcut at `chrome://extensions/shortcuts`.
 
 Open the extension's options page (click the icon, then *Profile & settings*):
 
-1. **Contact & work**: name, email, phone, links, address, work authorization, sponsorship, relocation, start date, salary, notice period. EEO answers default to *Decline to self-identify*.
+1. **Contact & work**: name, email, phone (and phone type, default *Mobile*), links, address, work preferences, start date, salary, notice period. EEO answers default to *Decline to self-identify*.
+   - **Work authorization.** By default *Always answer "authorized to work" = Yes and "require sponsorship" = No* is **on**: every such question gets those answers whatever country it names, so check that it's true for the role before you click Fill. Turn it off to answer per country from your country list instead.
 2. **Education & experience**: as many entries as you like. Dates as `YYYY-MM`.
 3. **Resume**: upload your PDF (and optionally a cover letter). It is stored in this browser only.
-4. **Answer bank**: past answers to open-ended questions ("Why this company?"), with optional tags. Used first when a form asks something similar.
+4. **Answer bank** has two kinds of entry:
+   - **With a question** ("Why this company?"), plus optional tags: reused directly when a form asks something similar.
+   - **Without a question** (a *writing sample*): if you only have your old answers and not the questions, paste them in (several at once, separated by a blank line or `---`). They are never typed into forms. With an API key, they tell the AI what you've built, what you care about and how you write, and it can draw on those facts when drafting answers to new questions.
 5. **Settings**: Google Sheet ID and tab name, optional Anthropic API key and model name.
 6. **Import / export**: back up everything to one JSON file (resume as base64). The API key is never exported. Keep backups out of git.
 
@@ -55,7 +58,13 @@ Click **Save** (bottom bar) after editing.
 4. **Save my answers to answer bank** captures the questions you answered by hand (and AI drafts you rewrote) for reuse. Untouched AI drafts are never saved as your answers.
 5. Review the form and click **Submit yourself**.
 
-**Workday** is a multi-step wizard. The extension fills the step you are on. Click **Save and Continue** yourself, then trigger the fill again for the next step. **Repeated sections** (Work Experience 2, 3 …) are mapped to your profile entries in order; sections beyond your entries are left empty and flagged.
+**Workday** is a multi-step wizard. The extension fills the step you are on. Click **Save and Continue** yourself, then trigger the fill again for the next step.
+
+**Repeated sections** (Work Experience 1, 2, 3 …; Education 1, 2 …), on every site: the n-th section on the page gets the n-th entry in your profile, counted in page order, so it doesn't matter how a site numbers its ids. Each gets its own title, company, location, description, and from/to month and year (a month dropdown is matched by name, "September", and a month text box gets "09"). A section beyond your entries is left empty and flagged; a job marked *current* gets its "I currently work here" box ticked and no end date.
+
+**Dropdown wording.** Your profile text is expanded to the wording forms use, so "Bachelor" selects "Bachelor's degree", a degree like "BSc" does too, and a province code like "QC" selects "Quebec". When no option matches, the panel row lists what the dropdown actually offered, so you can see why and adjust your profile.
+
+**Resume uploads** are checked after attaching. If the page doesn't show the file (some Workday upload zones ignore a programmatic file selection), the extension also drops the file onto the zone; if it still can't confirm, the row turns yellow instead of claiming success.
 
 **Forms inside iframes** (a Greenhouse form embedded on a company site) work: the script is injected into every frame of the tab you triggered, and the panel appears in the top frame. Limitation: on an unknown site, cross-origin iframes from a domain the extension has no permission for can't be reached; the panel will simply list no fields from them.
 
@@ -138,13 +147,13 @@ Notes:
 | Anthropic API key | `chrome.storage.local` | Only sent to Anthropic as your credential. Never exported |
 | A logged row | local copy + your Google Sheet | Yes, to Google Sheets, only after you confirm |
 
-**AI answers (optional).** Only when you have entered an API key, and only for an open-ended textarea with no close answer-bank match, the background worker calls Anthropic's API (official SDK) with: that question, the job posting text, your name, links, education, work history and up to three relevant saved answers as style examples. It never sends your email, phone, address, salary or EEO answers. The prompt forbids inventing experience; if your data can't support an answer the model replies with a marker and the field is left empty and flagged red. Without a key nothing is sent and the field is left empty. The model name is configurable in settings (default `claude-opus-5-5`).
+**AI answers (optional).** Only when you have entered an API key, and only for an open-ended textarea with no close answer-bank match, the background worker calls Anthropic's API (official SDK) with: that question, the job posting text, your name, links, education, work history, up to three related saved answers, and your question-less writing samples (up to about 8,000 characters in total, newest first). It never sends your email, phone, address, salary or EEO answers. Anything you paste into the answer bank may be sent, so don't paste anything you wouldn't want Anthropic's API to see. The prompt forbids inventing experience; if your data can't support an answer the model replies with a marker and the field is left empty and flagged red. Without a key nothing is sent and the field is left empty. The model name is configurable in settings (default `claude-opus-5-5`).
 
 Network destinations are limited by the manifest to the supported ATS sites, LinkedIn, `sheets.googleapis.com` and `api.anthropic.com`.
 
 ## What is and isn't verified
 
-**Verified by automated tests** (343 unit tests; 27 end-to-end tests that load the built extension in a real browser against local fixtures): matching rules, the fill mechanics (including React-style controlled inputs, selects, radios, custom dropdowns, file inputs), the never-submit and never-CAPTCHA guards, the log/duplicate/escape/queue logic against a fake Sheets server, every location rule, posting extraction and the real MHTML/Markdown/JSON files, the answer bank and LLM flow with a stubbed model, the pinned extension ID, and a production-bundle check that no test hooks ship.
+**Verified by automated tests** (372 unit tests; 30 end-to-end tests that load the built extension in a real browser against local fixtures): matching rules, the fill mechanics (including React-style controlled inputs, selects, radios, custom dropdowns, file inputs), the never-submit and never-CAPTCHA guards, the log/duplicate/escape/queue logic against a fake Sheets server, every location rule, posting extraction and the real MHTML/Markdown/JSON files, the answer bank and LLM flow with a stubbed model, the pinned extension ID, and a production-bundle check that no test hooks ship.
 
 **Not verified against the real services**, and worth a first run with a throwaway sheet and a real application you are not going to submit:
 

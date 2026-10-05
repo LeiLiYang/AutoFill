@@ -1,7 +1,7 @@
-import type { FieldDescriptor, FieldKind, FieldOption } from '../adapters/types';
+import type { FieldDescriptor, FieldKind, FieldOption, Section } from '../adapters/types';
 import { PLACEHOLDER_OPTION } from '../config/optionSynonyms';
 import { isCaptchaElement, isFillable } from '../fill/safety';
-import { cleanLabel, normalize } from './normalize';
+import { attrWords, cleanLabel, normalize } from './normalize';
 import { isOptionSelected } from './selection';
 
 const SKIP_INPUT_TYPES = new Set(['hidden', 'submit', 'button', 'image', 'reset', 'password', 'search', 'range', 'color']);
@@ -88,6 +88,40 @@ function nearbyTextFor(el: HTMLElement): string {
     }
   }
   return '';
+}
+
+const EDUCATION_WORDS = /\b(education|school|university|college|academic)\b/;
+const EXPERIENCE_WORDS = /\b(work experience|work history|employment|experience|employer|job history)\b/;
+
+/**
+ * Whether a field sits in the Education or the Work experience part of a form, judged from the ids,
+ * classes and automation ids of the field and its wrappers, and from the nearest heading above it.
+ * Repeated sections are common ("Education 1", "Work Experience 2"), and the same label ("Start date
+ * month") means different data in each.
+ */
+export function sectionOf(el: HTMLElement): Section | undefined {
+  const classify = (words: string): Section | undefined =>
+    EDUCATION_WORDS.test(words) ? 'education' : EXPERIENCE_WORDS.test(words) ? 'experience' : undefined;
+
+  let n: HTMLElement | null = el;
+  for (let depth = 0; n && depth < 8; depth++, n = n.parentElement) {
+    const own = [n.id, n.getAttribute('data-automation-id'), n.getAttribute('data-testid'), n.getAttribute('class'), n.getAttribute('aria-label'), n.getAttribute('name')]
+      .filter(Boolean)
+      .map((v) => attrWords(v))
+      .join(' ');
+    const hit = classify(own);
+    if (hit) return hit;
+    // A heading or legend just before this block names the section.
+    for (let prev = n.previousElementSibling, hops = 0; prev && hops < 3; prev = prev.previousElementSibling, hops++) {
+      if (/^(H[1-6]|LEGEND)$/.test(prev.tagName) || prev.getAttribute('role') === 'heading') {
+        const h = classify(normalize(prev.textContent ?? ''));
+        if (h) return h;
+        break;
+      }
+    }
+    if (n.tagName === 'FORM') break;
+  }
+  return undefined;
 }
 
 function groupLabel(first: HTMLElement): string {
@@ -229,6 +263,7 @@ export function buildDescriptors(root: ParentNode, doc: Document = (root as Docu
       automationId: el.getAttribute('data-automation-id') ?? undefined,
       nearbyText: nearby,
       options,
+      section: sectionOf(el),
       required: isRequired(el, label, group),
       currentValue: readCurrentValue(el, kind, group),
     });

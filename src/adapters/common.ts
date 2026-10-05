@@ -30,13 +30,6 @@ export function applyHints(ds: FieldDescriptor[], hints: Hint[]): FieldDescripto
   });
 }
 
-/** Number N from the nearest ancestor whose data-automation-id is "<prefix>-N" (1-based in the page, 0-based here). */
-export function sectionIndex(el: Element, prefix: string): number | undefined {
-  const sec = el.closest(`[data-automation-id^="${prefix}-"]`);
-  const n = Number(sec?.getAttribute('data-automation-id')?.slice(prefix.length + 1));
-  return Number.isInteger(n) && n >= 1 ? n - 1 : undefined;
-}
-
 /** Replace weak labels with the platform's own question element text. */
 export function refineLabels(ds: FieldDescriptor[], questionText: (el: HTMLElement) => string | null): FieldDescriptor[] {
   return ds.map((d) => {

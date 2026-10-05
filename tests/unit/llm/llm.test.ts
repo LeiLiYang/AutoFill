@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { describe, expect, it, vi } from 'vitest';
-import { BANK_CONFIDENT, findAnswer, questionSimilarity, styleSamples } from '../../../src/llm/answerBank';
+import { BANK_CONFIDENT, findAnswer, questionSimilarity, splitSamples, styleSamples } from '../../../src/llm/answerBank';
 import { answerQuestion } from '../../../src/llm/answerQuestion';
 import { fitToLimit, generateAnswer, supportsEffort, type ClaudeDeps } from '../../../src/llm/client';
 import { INSUFFICIENT, buildPrompt, profileSummary } from '../../../src/llm/prompt';
@@ -42,8 +42,34 @@ describe('answer bank matching', () => {
 
   it('chooses style samples by relevance, falling back to the most recent', () => {
     const bank = [ans('Why this company?', 'A', [], '2026-01-01'), ans('Biggest challenge', 'B', [], '2026-03-01'), ans('Favorite tool', 'C', [], '2026-02-01')];
-    expect(styleSamples('Why do you want this company?', bank, 1)[0]!.answer).toBe('A');
-    expect(styleSamples('zzz unrelated qqq', bank, 2).map((s) => s.answer)).toEqual(['B', 'C']);
+    expect(styleSamples('Why do you want this company?', bank, 1).qa[0]!.answer).toBe('A');
+    expect(styleSamples('zzz unrelated qqq', bank, 2).qa.map((s) => s.answer)).toEqual(['B', 'C']);
+  });
+
+  it('always includes answers saved without a question as background, newest first, within a budget', () => {
+    const bank = [
+      ans('', 'I built a compiler for fun and love systems programming.', [], '2026-01-01'),
+      ans('', 'Robotics club captain; I enjoy mentoring.', [], '2026-02-01'),
+      ans('Why us?', 'Because.', [], '2026-03-01'),
+    ];
+    const { qa, background } = styleSamples('Totally unrelated question zzz', bank);
+    expect(background.map((b) => b.answer.slice(0, 8))).toEqual(['Robotics', 'I built ']);
+    expect(qa.map((q) => q.question)).toEqual(['Why us?']);
+
+    const huge = Array.from({ length: 20 }, (_, i) => ans('', 'x'.repeat(1700), [], `2026-01-${String(i + 1).padStart(2, '0')}`));
+    expect(styleSamples('q', huge).background.length).toBeLessThanOrEqual(4); // 8000-char budget
+  });
+
+  it('never matches a question-less entry to a form question', () => {
+    expect(findAnswer('Why do you want to work here?', [ans('', 'I built a compiler for fun.')])).toBeNull();
+  });
+
+  it('splits pasted text into separate samples', () => {
+    const a = 'First answer is long enough to keep.';
+    const b = 'Second answer, also long enough.\n\nWith a blank line inside it.';
+    expect(splitSamples(`${a}\n\n${a}`)).toEqual([a, a]);
+    expect(splitSamples(`${a}\n---\n${b}`)).toEqual([a, b]); // --- fences allow blank lines within an answer
+    expect(splitSamples('short\n\n   \n\n')).toEqual([]);
   });
 });
 
@@ -70,6 +96,20 @@ describe('prompt', () => {
       expect(out.system + out.user).not.toContain(secret);
     }
     expect(profileSummary(profile)).not.toContain('@');
+  });
+
+  it('presents question-less answers as background on the applicant, and allows using their facts', () => {
+    const withBg = buildPrompt({
+      question: 'What excites you about this role?',
+      profile,
+      samples: [],
+      background: [ans('', 'I spent a summer building a distributed key-value store and loved it.')],
+    });
+    expect(withBg.user).toContain('<writing_samples');
+    expect(withBg.user).toContain('distributed key-value store');
+    expect(withBg.system).toMatch(/profile, past answers and writing samples/i);
+    expect(withBg.user.indexOf('<writing_samples')).toBeLessThan(withBg.user.indexOf('<question>'));
+    expect(out.user).not.toContain('<writing_samples'); // none provided: no empty block
   });
 
   it('forbids inventing experience and defines the insufficient-info escape hatch', () => {
@@ -163,6 +203,21 @@ describe('answerQuestion', () => {
     const { deps: d, create } = deps('  ');
     expect(await answerQuestion(d, { question: 'Why us?' })).toMatchObject({ ok: false, kind: 'no-key' });
     expect(create).not.toHaveBeenCalled();
+  });
+
+  it('feeds question-less writing samples into the prompt so the model can use them', async () => {
+    const create = vi.fn().mockResolvedValue({ content: [{ type: 'text', text: 'Draft.' }], stop_reason: 'end_turn' });
+    const profile = { ...testProfile(), answerBank: [ans('', 'I run a robotics club and love teaching younger students.')] };
+    await answerQuestion(
+      {
+        loadProfile: async () => profile,
+        loadSettings: async () => ({ ...defaultSettings(), anthropicApiKey: 'k' }),
+        getPosting: async () => null,
+        claude: () => ({ create }) as ClaudeDeps,
+      },
+      { question: 'Tell us something about yourself' },
+    );
+    expect(create.mock.calls[0]![0].messages[0].content).toContain('robotics club');
   });
 
   it('uses the configured model, the key, the posting and relevant samples', async () => {

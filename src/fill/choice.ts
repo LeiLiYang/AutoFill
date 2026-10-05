@@ -11,6 +11,11 @@ export interface PickedOption {
   score: number;
 }
 
+/** A group choice; `unconfirmed` = a custom button was clicked but the page showed no visible change. */
+export interface GroupChoice extends PickedOption {
+  unconfirmed?: boolean;
+}
+
 export const boolTargets = (value: boolean): string[] => (value ? YES : NO);
 
 /** Best option for any of the targets; placeholders are never chosen. */
@@ -42,13 +47,21 @@ export function selectNative(select: HTMLSelectElement, targets: string[]): Pick
 }
 
 /** Click the best-matching radio/checkbox option. Returns null when nothing matches well. */
-export function chooseInGroup(options: FieldOption[], targets: string[]): PickedOption | null {
+export function chooseInGroup(options: FieldOption[], targets: string[]): GroupChoice | null {
   const picked = pickOption(options, targets);
   if (!picked || picked.score < MIN_OPTION_SCORE) return null;
   const el = picked.option.element!;
-  if (!isOptionSelected(el) && !safeClick(el)) return null;
-  // Button groups only count once the page reflects the click (aria-pressed / state class).
-  return isOptionSelected(el) ? picked : null;
+  if (isOptionSelected(el)) return picked;
+
+  const snapshot = () => options.map((o) => o.element?.outerHTML ?? '').join('|');
+  const before = snapshot();
+  if (!safeClick(el)) return null;
+  if (isOptionSelected(el)) return picked;
+
+  // A real radio/checkbox that did not become checked failed. A custom button group may show its
+  // selection in a way we cannot read: if the DOM changed the click registered, otherwise say so.
+  if (el instanceof HTMLInputElement) return null;
+  return snapshot() !== before ? picked : { ...picked, unconfirmed: true };
 }
 
 /** Set a lone checkbox to the desired state. */

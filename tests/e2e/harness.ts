@@ -109,6 +109,17 @@ export function e2eProfile(): Profile {
   return p;
 }
 
+/** A student profile: four past internships and a degree written as just "Bachelor". */
+export function e2eFourInternships(): Profile {
+  const p = e2eProfile();
+  const job = (company: string, title: string, y: number) => ({
+    company, title, location: 'Montreal, QC', startDate: `${y}-05`, endDate: `${y}-08`, current: false, description: `${company} work in ${y}.`,
+  });
+  p.experience = [job('Alpha Labs', 'SWE Intern', 2025), job('Beta Systems', 'Backend Intern', 2024), job('Gamma Cloud', 'Platform Intern', 2023), job('Delta Data', 'Data Intern', 2022)];
+  p.education = [{ school: 'Example University', degree: 'Bachelor', field: 'Computer Science', startDate: '2022-09', endDate: '2026-05', gpa: '', current: true }];
+  return p;
+}
+
 /** Write profile + resume into the extension's storage via an extension page. */
 export async function seed(ext: Ext, profile: Profile = e2eProfile()): Promise<void> {
   const page = await ext.context.newPage();

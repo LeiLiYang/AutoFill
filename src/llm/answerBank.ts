@@ -57,17 +57,54 @@ export function findAnswer(question: string, bank: Answer[]): BankMatch | null {
 }
 
 /**
- * Past answers to show the model as style examples: the most relevant ones, falling back to the
- * most recently written when none are related.
+ * Split pasted text into separate answers. A line of "---" or a blank line ends one answer, but a
+ * blank line inside a long answer is kept when answers are fenced with "---".
  */
-export function styleSamples(question: string, bank: Answer[], max = 3): Answer[] {
+export function splitSamples(pasted: string): string[] {
+  const text = pasted.replace(/\r\n/g, '\n').trim();
+  const parts = /^\s*-{3,}\s*$/m.test(text) ? text.split(/^\s*-{3,}\s*$/m) : text.split(/\n\s*\n/);
+  return parts.map((p) => p.trim()).filter((p) => p.length >= 20);
+}
+
+/** Writing samples saved without a question: they show who the applicant is rather than answer something. */
+export const isSample = (a: Answer) => !a.question.trim();
+
+/** Characters of background samples sent per request, and the cap on any single sample. */
+const BACKGROUND_BUDGET = 8000;
+const BACKGROUND_EACH = 1800;
+
+export interface PromptSamples {
+  /** Past question/answer pairs most related to this question: style and content examples. */
+  qa: Answer[];
+  /** Answers saved without a question: background on the applicant's interests, experience and voice. */
+  background: Answer[];
+}
+
+/**
+ * What to show the model besides the profile. Entries saved without a question are always included
+ * (newest first, within a size budget): they are how the model learns about the applicant. Entries
+ * with a question are ranked by relevance, falling back to the most recent when none relate.
+ */
+export function styleSamples(question: string, bank: Answer[], max = 3): PromptSamples {
   const usable = bank.filter((a) => a.answer.trim());
-  const ranked = usable
+  const byNewest = (a: Answer, b: Answer) => b.updatedAt.localeCompare(a.updatedAt);
+
+  const background: Answer[] = [];
+  let used = 0;
+  for (const s of usable.filter(isSample).sort(byNewest)) {
+    const text = s.answer.trim().slice(0, BACKGROUND_EACH);
+    if (used + text.length > BACKGROUND_BUDGET) break;
+    background.push({ ...s, answer: text });
+    used += text.length;
+  }
+
+  const withQuestion = usable.filter((a) => !isSample(a));
+  const related = withQuestion
     .map((entry) => ({ entry, score: questionSimilarity(question, entry) }))
     .filter((r) => r.score >= 0.2)
     .sort((a, b) => b.score - a.score)
     .slice(0, max)
     .map((r) => r.entry);
-  if (ranked.length) return ranked;
-  return usable.slice().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, Math.min(2, max));
+  const qa = related.length ? related : withQuestion.sort(byNewest).slice(0, Math.min(2, max));
+  return { qa, background };
 }

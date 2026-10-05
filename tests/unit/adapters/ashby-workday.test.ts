@@ -5,7 +5,7 @@ import { workdayAdapter } from '../../../src/adapters/workday';
 import { datePart } from '../../../src/detect/values';
 import { isOptionSelected } from '../../../src/detect/selection';
 import { safeClick } from '../../../src/fill/safety';
-import { fillWith, loadFixture, testProfile } from '../fixtures';
+import { fillWith, fourInternshipsProfile, loadFixture, testProfile } from '../fixtures';
 import { mount } from '../helpers';
 
 const ctx = (url: string) => ({ doc: document, url: new URL(url), isTopFrame: true });
@@ -88,14 +88,14 @@ describe('Workday adapter', () => {
     expect(val('#email')).toBe('ada@example.com');
     expect(text('#country')).toBe('Canada');
     // the step-2 fields are hidden, so they are neither filled nor reported
-    expect(val('#jt1')).toBe('');
+    expect(val('[id="workExperience-4--jobTitle"]')).toBe('');
     expect(reports.some((r) => r.label.startsWith('Job Title'))).toBe(false);
   });
 
-  it('skips the phone country code and device type widgets', async () => {
+  it('sets the phone device type to Mobile and leaves the country dialling code alone', async () => {
     const { reports } = await fillWith(workdayAdapter, URL_, testProfile());
-    expect(reports.some((r) => /country phone code|phone device type/i.test(r.label))).toBe(false);
-    expect(text('#pdt')).toBe('Select One');
+    expect(text('#pdt')).toBe('Mobile');
+    expect(reports.some((r) => /country phone code/i.test(r.label))).toBe(false);
     expect(text('#cpc')).toBe('Select One');
   });
 
@@ -104,31 +104,81 @@ describe('Workday adapter', () => {
     expect(reports.find((r) => r.label.startsWith('Address Line 1'))).toMatchObject({ status: 'no-data', emptyRequired: true });
   });
 
-  it('fills the next step when triggered again, mapping repeated sections to profile entries', async () => {
-    const profile = testProfile();
-    await fillWith(workdayAdapter, URL_, profile);
-    // the user clicks Next themselves
+  const goToStep2 = () => {
+    // the user clicks Save and Continue themselves
     document.getElementById('step1')!.style.display = 'none';
     document.getElementById('step2')!.style.display = '';
+  };
+  const wx = (n: number, field: string) => `[id="workExperience-${n}--${field}"]`;
 
+  it('gives each of four work-experience sections its own job, however Workday numbers them', async () => {
+    const profile = fourInternshipsProfile();
+    goToStep2();
     const { reports } = await fillWith(workdayAdapter, URL_, profile);
-    expect(val('#jt1')).toBe('Engineer');
-    expect(val('#co1')).toBe('Analytical Engines');
-    expect(val('#loc1')).toBe('Montreal, QC');
-    expect((document.getElementById('cur1') as HTMLInputElement).checked).toBe(true);
-    expect(val('#sm1')).toBe('05');
-    expect(val('#sy1')).toBe('2025');
-    expect(val('#em1')).toBe(''); // current job: no end date
-    expect(val('#rd1')).toBe('Built the engine.');
-    expect(val('#sch1')).toBe('Example University');
-    expect(text('#deg1')).toBe('BSc');
-    expect(val('#ly1')).toBe('2026');
 
-    // a second, unfilled work-experience section has no profile entry: left empty, flagged required
-    expect(val('#jt2')).toBe('');
-    expect(reports.filter((r) => r.label.startsWith('Job Title')).map((r) => r.status)).toEqual(['filled', 'no-data']);
-    expect(reports.filter((r) => r.label.startsWith('Job Title')).at(1)!.emptyRequired).toBe(true);
-    // step-1 fields were already filled and are left alone
+    // the page numbers its sections 4,5,6,7; profile entries are matched by order on the page
+    [4, 5, 6, 7].forEach((n, i) => {
+      const job = profile.experience[i]!;
+      expect(val(wx(n, 'jobTitle')), `section ${n} title`).toBe(job.title);
+      expect(val(wx(n, 'companyName')), `section ${n} company`).toBe(job.company);
+      expect(val(wx(n, 'location'))).toBe(job.location);
+      expect(val(wx(n, 'roleDescription')), `section ${n} description`).toBe(job.description);
+    });
+    expect(new Set([4, 5, 6, 7].map((n) => val(wx(n, 'companyName')))).size).toBe(4); // not the same job four times
+    expect(reports.filter((r) => r.label.startsWith('Job Title')).every((r) => r.status === 'filled')).toBe(true);
+  });
+
+  it('fills the From / To month and year boxes of every work section', async () => {
+    const profile = fourInternshipsProfile();
+    goToStep2();
+    await fillWith(workdayAdapter, URL_, profile);
+    [4, 5, 6, 7].forEach((n, i) => {
+      const job = profile.experience[i]!;
+      const [sy, sm] = job.startDate.split('-');
+      const [ey, em] = job.endDate.split('-');
+      expect(val(`[id="workExperience-${n}--startDate-dateSectionMonth-input"]`), `start month ${n}`).toBe(sm);
+      expect(val(`[id="workExperience-${n}--startDate-dateSectionYear-input"]`), `start year ${n}`).toBe(sy);
+      expect(val(`[id="workExperience-${n}--endDate-dateSectionMonth-input"]`), `end month ${n}`).toBe(em);
+      expect(val(`[id="workExperience-${n}--endDate-dateSectionYear-input"]`), `end year ${n}`).toBe(ey);
+    });
+  });
+
+  it('checks "I currently work here" only on the current job and leaves its end date empty', async () => {
+    const profile = fourInternshipsProfile();
+    profile.experience[0]!.current = true;
+    goToStep2();
+    await fillWith(workdayAdapter, URL_, profile);
+    const checked = [4, 5, 6, 7].map((n) => (document.querySelector(wx(n, 'currentlyWorkHere')) as HTMLInputElement).checked);
+    expect(checked).toEqual([true, false, false, false]);
+    expect(val('[id="workExperience-4--endDate-dateSectionYear-input"]')).toBe('');
+    expect(val('[id="workExperience-5--endDate-dateSectionYear-input"]')).toBe('2024');
+  });
+
+  it('fills education and picks the dropdown option by clicking the element that holds its text', async () => {
+    goToStep2();
+    await fillWith(workdayAdapter, URL_, fourInternshipsProfile());
+    expect(val('[id="education-2--schoolName"]')).toBe('Example University');
+    expect(text('[id="education-2--degree"]')).toBe("Bachelor's Degree"); // profile says "Bachelor"
+    expect(val('[id="education-2--fieldOfStudy"]')).toBe('Computer Science');
+    expect(val('[id="education-2--firstYearAttended-dateSectionYear-input"]')).toBe('2022');
+    expect(val('[id="education-2--lastYearAttended-dateSectionYear-input"]')).toBe('2026');
+  });
+
+  it('leaves surplus sections empty when the profile has fewer entries, and flags required ones', async () => {
+    const profile = fourInternshipsProfile();
+    profile.experience = profile.experience.slice(0, 2);
+    goToStep2();
+    const { reports } = await fillWith(workdayAdapter, URL_, profile);
+    expect(val(wx(6, 'jobTitle'))).toBe('');
+    expect(reports.filter((r) => r.label.startsWith('Job Title')).map((r) => r.status)).toEqual(['filled', 'filled', 'no-data', 'no-data']);
+    expect(reports.filter((r) => r.label.startsWith('Job Title')).at(3)!.emptyRequired).toBe(true);
+  });
+
+  it('does not touch step 1 again when filling step 2', async () => {
+    const profile = fourInternshipsProfile();
+    await fillWith(workdayAdapter, URL_, profile);
+    goToStep2();
+    const { reports } = await fillWith(workdayAdapter, URL_, profile);
     expect(reports.some((r) => r.label.startsWith('Given Name'))).toBe(false);
   });
 

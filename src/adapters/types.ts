@@ -11,10 +11,16 @@ export type ProfileKey =
   | 'school' | 'degree' | 'field' | 'gpa'
   | 'gender' | 'race' | 'hispanicLatino' | 'veteran' | 'disability'
   | 'resume' | 'coverLetter'
-  // Indexed work-history / education fields (set by adapters via entryIndex, never by label rules).
+  | 'phoneType'
+  // Repeated work-history / education sections. The generic start/end keys use the field's `section`
+  // (education vs experience); the explicit ones are for adapters that know which they mean.
+  | 'startMonth' | 'startYear' | 'endMonth' | 'endYear'
   | 'expLocation' | 'expDescription' | 'expCurrent'
   | 'expStartMonth' | 'expStartYear' | 'expEndMonth' | 'expEndYear'
   | 'eduStartYear' | 'eduEndYear';
+
+/** Which repeating part of an application a field sits in. */
+export type Section = 'education' | 'experience';
 
 export type FieldKind =
   | 'text' | 'textarea' | 'select' | 'radio' | 'checkbox' | 'combobox' | 'file' | 'date';
@@ -44,6 +50,8 @@ export interface FieldDescriptor {
   hintedKey?: ProfileKey;
   /** Which work-experience / education entry this field belongs to (0-based), when the form repeats sections. */
   entryIndex?: number;
+  /** Education or work-experience part of the form, read from ids/classes/headings around the field. */
+  section?: Section;
 }
 
 export interface Match {
