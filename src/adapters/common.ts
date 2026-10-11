@@ -2,10 +2,16 @@ import { buildDescriptors } from '../detect/descriptor';
 import { attrWords } from '../detect/normalize';
 import type { AdapterContext, FieldDescriptor, ProfileKey } from './types';
 
-/** Descriptors for the form inside the first matching root selector (or the whole document). */
+/**
+ * Descriptors for the form inside the first matching root selector (or the whole document).
+ * A root that holds no fields was the wrong guess (another site reusing the same id): look at the
+ * whole document rather than report an empty form.
+ */
 export function describeWithin(ctx: AdapterContext, rootSelectors: string[], skip: (d: FieldDescriptor) => boolean = () => false): FieldDescriptor[] {
   const root = rootSelectors.map((s) => ctx.doc.querySelector(s)).find(Boolean) ?? ctx.doc;
-  return buildDescriptors(root, ctx.doc).filter((d) => !skip(d));
+  const scoped = buildDescriptors(root, ctx.doc).filter((d) => !skip(d));
+  if (scoped.length || root === ctx.doc) return scoped;
+  return buildDescriptors(ctx.doc, ctx.doc).filter((d) => !skip(d));
 }
 
 export interface Hint {

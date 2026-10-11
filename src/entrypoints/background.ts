@@ -51,8 +51,28 @@ const getReports = async (tabId: number): Promise<FrameReport[]> => {
 const toTopFrame = (tabId: number, msg: ToContent) =>
   chrome.tabs.sendMessage(tabId, msg, { frameId: 0 }).catch(() => undefined);
 
-async function pushPanel(tabId: number, filling: boolean) {
-  await toTopFrame(tabId, { type: 'panel-update', frames: await getReports(tabId), filling });
+async function pushPanel(tabId: number, filling: boolean, notice?: string) {
+  await toTopFrame(tabId, { type: 'panel-update', frames: await getReports(tabId), filling, notice });
+}
+
+/** Chrome's injection errors, in words the user can act on. */
+function explain(e: unknown): string {
+  const message = e instanceof Error ? e.message : String(e);
+  if (/cannot access|cannot be scripted|chrome:\/\/|extensions gallery|chrome web store|error page/i.test(message)) {
+    return 'Chrome does not let extensions run on this page (browser pages, the Web Store, PDFs and error pages are off limits).';
+  }
+  return message;
+}
+
+/** The shortcut and the right-click menu have nowhere to show an error: flag it on the toolbar icon. */
+async function flagOnIcon(tabId: number, message: string | null) {
+  try {
+    await chrome.action.setBadgeText({ tabId, text: message ? '!' : '' });
+    await chrome.action.setTitle({ tabId, title: message ? `Autofill: ${message}` : '' });
+    if (message) await chrome.action.setBadgeBackgroundColor({ tabId, color: '#d93025' });
+  } catch {
+    /* the tab is gone */
+  }
 }
 
 /** Serialise report writes per tab: frames report concurrently and storage is read-modify-write. */
@@ -69,19 +89,30 @@ async function triggerFill(tabId: number, overwriteOverride?: boolean) {
   const overwrite = overwriteOverride ?? settings.overwrite;
   await enqueue(tabId, () => chrome.storage.session.set({ [reportsKey(tabId)]: [] }));
 
+  void flagOnIcon(tabId, null);
+
   let frameIds: number[];
+  let notice: string | undefined;
   try {
     const results = await chrome.scripting.executeScript({ target: { tabId, allFrames: true }, files: [CONTENT_SCRIPT] });
     frameIds = results.map((r) => r.frameId);
   } catch {
-    // Some frames (cross-origin without host permission) are not injectable: fall back to the top frame.
+    // Some frames are not injectable (sandboxed, or a browser page embedded in the site): fall back to the top frame.
     const results = await chrome.scripting.executeScript({ target: { tabId }, files: [CONTENT_SCRIPT] });
     frameIds = results.map((r) => r.frameId);
+    notice = 'An embedded frame on this page could not be reached, so any fields inside it were not filled.';
   }
 
   const msg: ToContent = { type: 'run-fill', overwrite };
-  await Promise.allSettled(frameIds.map((frameId) => chrome.tabs.sendMessage(tabId, msg, { frameId })));
-  await enqueue(tabId, () => pushPanel(tabId, false));
+  const settled = await Promise.allSettled(
+    frameIds.map((frameId) => chrome.tabs.sendMessage(tabId, msg, { frameId }) as Promise<{ ok: boolean; error?: string } | undefined>),
+  );
+  // A frame that threw part-way would otherwise look exactly like a frame with nothing to fill.
+  const failure = settled.map((r) => (r.status === 'fulfilled' ? (r.value?.ok === false ? r.value.error : undefined) : String(r.reason))).find(Boolean);
+  if (failure && !/receiving end does not exist|message port closed/i.test(failure)) {
+    notice = `Part of this page could not be filled: ${failure.replace(/^Error:\s*/, '')}`;
+  }
+  await enqueue(tabId, () => pushPanel(tabId, false, notice));
 }
 
 function storeFrameReport(tabId: number, frameId: number, report: FrameReport) {
@@ -159,6 +190,7 @@ const ensureInjected = (tabId: number) =>
 
 /** Open the review panel's log card for this page without reading or filling any field. */
 async function openLogPanel(tabId: number) {
+  void flagOnIcon(tabId, null);
   await ensureInjected(tabId);
   await chrome.tabs.sendMessage(tabId, { type: 'open-log' } satisfies ToContent, { frameId: 0 });
 }
@@ -249,18 +281,18 @@ export default defineBackground(() => {
     if (command !== 'fill-page' && command !== 'log-posting') return;
     const target = tab ?? (await chrome.tabs.query({ active: true, currentWindow: true }))[0];
     if (target?.id == null) return;
-    if (command === 'fill-page') await triggerFill(target.id);
-    else await openLogPanel(target.id);
+    const tabId = target.id;
+    await (command === 'fill-page' ? triggerFill(tabId) : openLogPanel(tabId)).catch((e) => flagOnIcon(tabId, explain(e)));
   });
 
   chrome.runtime.onMessage.addListener((msg: ToBackground, sender, sendResponse) => {
     const tabId = sender.tab?.id;
     switch (msg.type) {
       case 'open-log':
-        openLogPanel(msg.tabId).then(() => sendResponse({ ok: true }), (e) => sendResponse({ ok: false, error: String(e) }));
+        openLogPanel(msg.tabId).then(() => sendResponse({ ok: true }), (e) => sendResponse({ ok: false, error: explain(e) }));
         return true;
       case 'trigger-fill':
-        triggerFill(msg.tabId, msg.overwrite).then(() => sendResponse({ ok: true }), (e) => sendResponse({ ok: false, error: String(e) }));
+        triggerFill(msg.tabId, msg.overwrite).then(() => sendResponse({ ok: true }), (e) => sendResponse({ ok: false, error: explain(e) }));
         return true;
       case 'frame-report':
         if (tabId == null) return;

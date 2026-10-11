@@ -74,6 +74,21 @@ function typeNatively(el: HTMLInputElement | HTMLTextAreaElement, text: string):
   }
 }
 
+/**
+ * Whether the control holds what we typed, allowing for the page reformatting it: masked phone
+ * inputs add brackets and dashes, some trim or re-case. An emptied or different value is a failure.
+ */
+export function holdsValue(actual: string, wanted: string): boolean {
+  if (actual === wanted) return true;
+  const squash = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '');
+  const a = squash(actual);
+  const w = squash(wanted);
+  if (!a || !w) return false;
+  if (a === w) return true;
+  // A phone number that gained or lost its country code.
+  return /^\d{7,}$/.test(a) && /^\d{7,}$/.test(w) && (a.endsWith(w) || w.endsWith(a));
+}
+
 /** Fill a text-like control. Returns true if the control ends up holding the value. */
 export function fillText(el: HTMLInputElement | HTMLTextAreaElement, text: string): boolean {
   if (!isFillable(el) || el.readOnly) return false;
@@ -84,7 +99,31 @@ export function fillText(el: HTMLInputElement | HTMLTextAreaElement, text: strin
   }
   dispatchChange(el);
   blurEl(el);
-  return el.value === text;
+  return holdsValue(el.value, text);
+}
+
+/** Fill a contenteditable box (rich-text answer fields) the way typing would. */
+export function fillEditable(el: HTMLElement, text: string): boolean {
+  if (!isFillable(el)) return false;
+  focusEl(el);
+  const doc = el.ownerDocument;
+  let typed = false;
+  try {
+    const range = doc.createRange();
+    range.selectNodeContents(el);
+    const sel = doc.defaultView?.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+    typed = typeof doc.execCommand === 'function' && doc.execCommand('insertText', false, text);
+  } catch {
+    typed = false;
+  }
+  if (!typed || !holdsValue(el.textContent ?? '', text)) {
+    el.textContent = text;
+    dispatchInput(el, text);
+  }
+  blurEl(el);
+  return holdsValue(el.textContent ?? '', text);
 }
 
 /** Date inputs only accept ISO strings; try to coerce common formats, else give up. */

@@ -44,7 +44,7 @@ export interface FrameReport {
 /** Background → content script. */
 export type ToContent =
   | { type: 'run-fill'; overwrite: boolean }
-  | { type: 'panel-update'; frames: FrameReport[]; filling: boolean }
+  | { type: 'panel-update'; frames: FrameReport[]; filling: boolean; notice?: string }
   | { type: 'scroll-to'; fieldId: string }
   | { type: 'collect-answers' }
   /** Show the log card for this posting without filling anything (the user may not be applying). */

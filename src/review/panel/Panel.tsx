@@ -9,6 +9,8 @@ import { LogCard } from './LogCard';
 export interface PanelProps {
   frames: FrameReport[];
   filling: boolean;
+  /** Something the run could not do (an unreachable frame, a frame that failed). */
+  notice?: string;
   /** LinkedIn: the extension never autofills there; the panel only logs and saves the posting. */
   logOnly?: boolean;
   /** Explains why no fields are listed in log-only mode. */
@@ -63,9 +65,9 @@ export function describeSave(r: SaveAnswersResult): string {
   );
 }
 
-export function Panel({ frames, filling, logOnly, logOnlyNote, prefill, onScroll, onSaveAnswers, onSavePosting, onLog, onClose }: PanelProps) {
+export function Panel({ frames, filling, notice, logOnly, logOnlyNote, prefill, onScroll, onSaveAnswers, onSavePosting, onLog, onClose }: PanelProps) {
   const [saved, setSaved] = useState<string | null>(null);
-  const [showOther, setShowOther] = useState(false);
+  const [otherToggled, setOtherToggled] = useState<boolean | null>(null);
   const [posting, setPosting] = useState<SavePostingResult | 'saving' | null>(null);
 
   const savePosting = async () => {
@@ -80,6 +82,11 @@ export function Panel({ frames, filling, logOnly, logOnlyNote, prefill, onScroll
   const yellow = rows.filter((r) => r.level === 'yellow');
   const green = rows.filter((r) => r.level === 'green');
   const other = rows.filter((r) => r.level === null && r.report.status !== 'skipped-existing');
+  const kept = rows.filter((r) => r.report.status === 'skipped-existing').length;
+  // When nothing was filled, the reasons are the whole story: show them without a click.
+  const nothingFilled = !filling && green.length + yellow.length + kept === 0;
+  const showOther = otherToggled ?? nothingFilled;
+  const setShowOther = setOtherToggled;
 
   const saveNote = useRef<HTMLParagraphElement>(null);
   const [savingAnswers, setSavingAnswers] = useState(false);
@@ -131,6 +138,18 @@ export function Panel({ frames, filling, logOnly, logOnlyNote, prefill, onScroll
           <span className="chip y">{yellow.length} review</span>
           <span className="chip r">{red.length} required empty</span>
         </div>
+      )}
+
+      {notice && <p className="note err" role="alert">{notice}</p>}
+      {!logOnly && !filling && rows.length === 0 && (
+        <p className="note empty" role="status">
+          No form fields found on this page. If the form opens after you click Apply (or on a later step), open it and press Fill again.
+        </p>
+      )}
+      {!logOnly && nothingFilled && rows.length > 0 && (
+        <p className="note empty" role="status">
+          Found {plural(rows.length, 'field')} but could not fill any. The reasons are listed under Not filled.
+        </p>
       )}
 
       {red.length > 0 && (

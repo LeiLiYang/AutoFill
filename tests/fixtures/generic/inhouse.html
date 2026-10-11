@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Postuler - Acme Carrières</title>
+<style>
+  .pill input { display: none; }
+  .pill { border: 1px solid #999; padding: 4px 10px; border-radius: 999px; cursor: pointer; }
+</style>
+</head>
+<body>
+<h1>Postuler</h1>
+<!-- An in-house form: no <label for>, opaque ids, glued names, styled radios, a web component. -->
+<div id="app">
+  <div class="row"><div class="form-label">Prénom</div><div><input id="q_1"></div></div>
+  <div class="row"><input id="q_2" name="lastname" placeholder="Votre réponse"></div>
+  <div class="row"><input id="q_3" data-testid="input-email"><label>Courriel</label></div>
+  <div class="row"><span class="field-label">Téléphone</span><input id="q_4" type="tel"></div>
+
+  <fieldset>
+    <legend>Do you require visa sponsorship?</legend>
+    <label class="pill"><input type="radio" name="spons" value="yes" id="spons_yes"> Yes</label>
+    <label class="pill"><input type="radio" name="spons" value="no" id="spons_no"> No</label>
+  </fieldset>
+
+  <span id="auth_q">Are you legally authorized to work in Canada?</span>
+  <div role="radiogroup" aria-labelledby="auth_q">
+    <div role="radio" aria-checked="false" tabindex="0" id="auth_yes">Yes</div>
+    <div role="radio" aria-checked="false" tabindex="0" id="auth_no">No</div>
+  </div>
+
+  <acme-links></acme-links>
+  <button type="submit" id="go">Soumettre</button>
+</div>
+<script>
+  // The phone input reformats what is typed, as masked inputs do.
+  const phone = document.getElementById('q_4');
+  phone.addEventListener('input', () => {
+    const d = phone.value.replace(/\D/g, '');
+    if (d.length === 10) phone.value = `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
+  });
+  for (const r of document.querySelectorAll('[role="radio"]')) {
+    r.addEventListener('click', () => {
+      for (const o of r.parentElement.children) o.setAttribute('aria-checked', String(o === r));
+    });
+  }
+  customElements.define('acme-links', class extends HTMLElement {
+    connectedCallback() {
+      this.attachShadow({ mode: 'open' }).innerHTML = '<label for="li">LinkedIn</label><input id="li">';
+    }
+  });
+</script>
+</body>
+</html>

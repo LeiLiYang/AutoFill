@@ -1,6 +1,8 @@
 import { isLinkedIn } from '../adapters/linkedin';
 import { pickAdapter } from '../adapters/registry';
 import type { FieldDescriptor, FreeTextResult } from '../adapters/types';
+import { CONTROL_SELECTOR } from '../detect/descriptor';
+import { deepQueryAll } from '../detect/deepQuery';
 import { runFill } from '../fill/engine';
 import { findAnswer } from '../llm/answerBank';
 import type { AnswerResult } from '../llm/client';
@@ -43,6 +45,7 @@ export default defineContentScript({
     let panel: PanelHandle | null = null;
     let frames: FrameReport[] = [];
     let filling = false;
+    let notice = '';
     let generated = new Map<string, string>();
     let logOnly = false;
     let logOnlyNote = '';
@@ -60,6 +63,7 @@ export default defineContentScript({
       const props = {
         frames,
         filling,
+        notice,
         logOnly,
         logOnlyNote,
         prefill,
@@ -117,11 +121,32 @@ export default defineContentScript({
       };
     }
 
+    /**
+     * Forms that render after the page loads (or after "Apply" is clicked) may not be there yet.
+     * Give a frame with no controls a moment before deciding it has none. Tiny frames (trackers,
+     * ad slots) never hold a form and are not waited for.
+     */
+    function waitForControls(timeoutMs = 1500): Promise<void> {
+      const has = () => deepQueryAll(document, CONTROL_SELECTOR).length > 0;
+      if (has() || window.innerWidth < 300 || window.innerHeight < 150) return Promise.resolve();
+      return new Promise((resolve) => {
+        const done = () => {
+          observer.disconnect();
+          clearTimeout(timer);
+          resolve();
+        };
+        const observer = new MutationObserver(() => has() && done());
+        const timer = setTimeout(done, timeoutMs);
+        observer.observe(document.documentElement, { childList: true, subtree: true });
+      });
+    }
+
     /** Panel with the log card only: nothing is read from or written to the page's form fields. */
     function showLogOnly(note: string) {
       clearHighlights();
       logOnly = true;
       logOnlyNote = note;
+      notice = '';
       filling = false;
       frames = [];
       prefill = computePrefill();
@@ -139,14 +164,20 @@ export default defineContentScript({
       if (isTop) {
         logOnly = false;
         frames = [];
+        notice = '';
         filling = true;
         prefill = computePrefill();
         renderPanel();
       }
       const profile = await loadProfile();
+      await waitForControls();
       const ctx = { doc: document, url, isTopFrame: isTop };
       const adapter = pickAdapter(ctx);
-      const result = await runFill({ adapter, ctx, profile, options: { overwrite, getFile, freeText: makeFreeText(profile) } });
+      const bankAnswer = (d: FieldDescriptor) => {
+        const hit = findAnswer((d.label || d.nearbyText || '').trim(), profile.answerBank);
+        return hit ? { text: hit.entry.answer, score: hit.score } : null;
+      };
+      const result = await runFill({ adapter, ctx, profile, options: { overwrite, getFile, freeText: makeFreeText(profile), bankAnswer } });
       descriptors = result.descriptors;
       lastReports = result.reports;
       generated = result.generated;
@@ -155,7 +186,7 @@ export default defineContentScript({
         const d = result.descriptors.get(r.id);
         if (level && d) highlight(d.element, level);
       }
-      if (!result.reports.length) return; // frames without form controls stay silent
+      // Frames without fields report too, so the panel can say "no form found" instead of nothing.
       await send({
         type: 'frame-report',
         report: { frameUrl: location.href, isTop, adapter: adapter.id, reports: result.reports },
@@ -180,6 +211,7 @@ export default defineContentScript({
           if (isTop) {
             frames = msg.frames;
             filling = msg.filling;
+            notice = msg.notice ?? '';
             renderPanel();
           }
           return;

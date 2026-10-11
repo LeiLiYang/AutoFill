@@ -66,7 +66,7 @@ Click **Save** (bottom bar) after editing.
 
 **Resume uploads** are checked after attaching. If the page doesn't show the file (some Workday upload zones ignore a programmatic file selection), the extension also drops the file onto the zone; if it still can't confirm, the row turns yellow instead of claiming success.
 
-**Forms inside iframes** (a Greenhouse form embedded on a company site) work: the script is injected into every frame of the tab you triggered, and the panel appears in the top frame. Limitation: on an unknown site, cross-origin iframes from a domain the extension has no permission for can't be reached; the panel will simply list no fields from them.
+**Forms inside iframes** (a Greenhouse form embedded on a company site) work: the script is injected into every frame of the tab you triggered, and the panel appears in the top frame. This includes forms a company embeds from another domain (iCIMS, SmartRecruiters and other ATS iframes): the extension has host access to all sites for that reason. Fields inside open shadow roots (web-component forms), radios and checkboxes hidden behind styled labels, and custom ARIA radios, checkboxes and dropdowns are found too. If a frame cannot be reached, or the page has no form yet, the panel says so.
 
 ### Log a posting without applying
 
@@ -153,7 +153,7 @@ Notes:
 
 **AI answers (optional).** Only when you have entered an API key, and only for an open-ended textarea with no close answer-bank match, the background worker calls Anthropic's API (official SDK) with: that question, the job posting text, your name, links, education, work history, up to three related saved answers, and your question-less writing samples (up to about 8,000 characters in total, newest first). It never sends your email, phone, address, salary or EEO answers. Anything you paste into the answer bank may be sent, so don't paste anything you wouldn't want Anthropic's API to see. The prompt asks for one concise answer of at most two paragraphs that blends the most relevant details from your past answers (it must not list or stack them), and forbids inventing experience; if your data can't support an answer the model replies with a marker and the field is left empty and flagged red. Without a key nothing is sent and the field is left empty. The model name is configurable in settings (default `claude-opus-5-5`).
 
-Network destinations are limited by the manifest to the supported ATS sites, LinkedIn, `sheets.googleapis.com` and `api.anthropic.com`.
+The manifest grants host access to all sites (`<all_urls>`). That is what lets the filler reach an application form embedded from another domain; it does not change when the extension runs. There are still no declared content scripts: nothing is injected into any page until you press Fill, Log or Save. The only network calls the extension itself makes are to `sheets.googleapis.com` and, with an API key, `api.anthropic.com`.
 
 ## What is and isn't verified
 
@@ -198,5 +198,6 @@ npm run keygen       # (re)generate the pinned extension key
 | "No access to this sheet" / "Sheet not found" | Wrong Sheet ID, or the Google account you signed in with can't edit it |
 | Rows pending in the popup | Offline or signed out; **Retry now** signs in if needed |
 | Nothing happens on Alt+Shift+F | Another extension owns the shortcut; change it at `chrome://extensions/shortcuts` |
+| Fill finds no fields | The panel says "No form fields found": the form usually opens after you click Apply, or sits on a later step. Open it and press Fill again |
 | A field is skipped | Check the panel's "Not filled" list; add a match rule, or the field is a CAPTCHA/password/consent control, which are skipped on purpose |
 | Posting files appear in the wrong place | Downloads folder / junction, see [Save posting](#save-posting) |

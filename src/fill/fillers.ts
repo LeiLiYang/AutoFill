@@ -2,7 +2,7 @@ import type { FieldDescriptor, FillOptions, FillResult, FillValue } from '../ada
 import { boolTargets, chooseInGroup, selectNative, setCheckbox } from './choice';
 import { fillCombobox } from './combobox';
 import { attachFile, dropFile, findDropzone } from './file';
-import { fillText, setNativeValue, toIsoDate } from './text';
+import { fillEditable, fillText, setNativeValue, toIsoDate } from './text';
 
 const ok = (detail?: string): FillResult => ({ status: 'filled', detail });
 const fail = (detail: string): FillResult => ({ status: 'failed', detail });
@@ -68,7 +68,8 @@ export async function defaultFill(d: FieldDescriptor, v: FillValue, opts: FillOp
   switch (d.kind) {
     case 'text':
     case 'textarea': {
-      const done = fillText(el as HTMLInputElement | HTMLTextAreaElement, textOf(v));
+      const native = el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement;
+      const done = native ? fillText(el, textOf(v)) : fillEditable(el, textOf(v));
       return done ? ok() : fail('input rejected the value');
     }
     case 'date': {
@@ -88,7 +89,7 @@ export async function defaultFill(d: FieldDescriptor, v: FillValue, opts: FillOp
     }
     case 'checkbox': {
       if (v.type === 'bool' && (d.options?.length ?? 1) <= 1) {
-        return setCheckbox(el as HTMLInputElement, v.value) ? ok() : fail('checkbox did not change');
+        return setCheckbox(el, v.value) ? ok() : fail('checkbox did not change');
       }
       const picked = chooseInGroup(d.options ?? [], targetsOf(v));
       return picked ? ok(picked.option.text) : fail('no matching option');

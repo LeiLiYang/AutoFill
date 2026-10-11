@@ -32,6 +32,32 @@ test('generic page: fills by label, panel appears, nothing is submitted', async 
   await page.close();
 });
 
+test('in-house form: div captions, glued names, styled radios, ARIA radios and shadow DOM', async () => {
+  const page = await ext.context.newPage();
+  await page.goto(`${servers.main.origin}/generic/inhouse.html`);
+  await triggerFill(ext, page);
+
+  await expect.poll(() => val(page, '#q_1')).toBe('Ada');
+  expect(await val(page, '#q_2')).toBe('Lovelace');
+  expect(await val(page, '#q_3')).toBe('ada@example.com');
+  expect(await val(page, '#q_4')).toBe('555-0100');
+  expect(await page.locator('#spons_no').isChecked()).toBe(true); // hidden behind a styled label
+  expect(await page.locator('#auth_yes').getAttribute('aria-checked')).toBe('true');
+  expect(await val(page, 'acme-links #li')).toBe('https://linkedin.com/in/ada'); // inside a shadow root
+
+  await expect(page.locator('#autofill-review-host .panel')).toContainText('7 filled');
+  expect(await submitEvents(page)).toEqual({ submit: 0, submitClick: 0 });
+  await page.close();
+});
+
+test('a page with no form says so instead of showing an empty panel', async () => {
+  const page = await ext.context.newPage();
+  await page.goto(`${servers.main.origin}/generic/noform.html`);
+  await triggerFill(ext, page);
+  await expect(page.locator('#autofill-review-host .panel')).toContainText('No form fields found on this page');
+  await page.close();
+});
+
 test('nothing runs until triggered', async () => {
   const page = await ext.context.newPage();
   await page.goto(`${servers.main.origin}/generic/basic.html`);

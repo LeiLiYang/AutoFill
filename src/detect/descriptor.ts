@@ -1,12 +1,17 @@
 import type { FieldDescriptor, FieldKind, FieldOption, Section } from '../adapters/types';
 import { PLACEHOLDER_OPTION } from '../config/optionSynonyms';
 import { isCaptchaElement, isFillable } from '../fill/safety';
+import { deepQueryAll, parentAcrossShadow } from './deepQuery';
 import { attrWords, cleanLabel, normalize } from './normalize';
 import { isOptionSelected } from './selection';
 
 const SKIP_INPUT_TYPES = new Set(['hidden', 'submit', 'button', 'image', 'reset', 'password', 'search', 'range', 'color']);
-// Custom dropdowns: ARIA comboboxes (react-select) and listbox buttons (Workday).
-const CONTROL_SELECTOR = 'input, textarea, select, [role="combobox"], button[aria-haspopup="listbox"]';
+// Custom dropdowns: ARIA comboboxes (react-select) and listbox triggers (Workday buttons, MUI divs).
+// Custom choices: ARIA radios, checkboxes and switches. Rich-text answers: contenteditable boxes.
+export const CONTROL_SELECTOR =
+  'input, textarea, select, [role="combobox"], [aria-haspopup="listbox"], [role="radio"], [role="checkbox"], [role="switch"], [contenteditable="true"], [contenteditable=""]';
+/** Caption elements that are really validation or help text, not the field's name. */
+const NOT_A_CAPTION = /error|invalid|help|hint|descr|counter|tooltip/i;
 const MAX_NEARBY_CHARS = 200;
 
 /** Text of an element excluding form controls (so a wrapping <label> yields only its caption). */
@@ -16,11 +21,17 @@ function captionText(root: Element): string {
   return (clone.textContent ?? '').replace(/\s+/g, ' ').trim();
 }
 
-function byIdsText(doc: Document, ids: string | null): string {
+/** Where an element's id references resolve: its shadow root if it is in one, else the document. */
+function idScope(el: Element): { getElementById(id: string): HTMLElement | null } {
+  const root = el.getRootNode?.();
+  return root && 'getElementById' in root ? (root as Document | ShadowRoot) : el.ownerDocument;
+}
+
+function byIdsText(scope: { getElementById(id: string): HTMLElement | null }, ids: string | null): string {
   if (!ids) return '';
   return ids
     .split(/\s+/)
-    .map((id) => doc.getElementById(id))
+    .map((id) => scope.getElementById(id))
     .filter((n): n is HTMLElement => !!n)
     .map((n) => captionText(n))
     .join(' ')
@@ -30,7 +41,7 @@ function byIdsText(doc: Document, ids: string | null): string {
 function isHiddenByStyle(el: Element): boolean {
   const win = el.ownerDocument.defaultView;
   if (!win) return false;
-  for (let n: Element | null = el; n; n = n.parentElement) {
+  for (let n: Element | null = el; n; n = parentAcrossShadow(n)) {
     if ((n as HTMLElement).hidden || n.getAttribute('aria-hidden') === 'true') return true;
     const cs = win.getComputedStyle(n);
     if (cs.display === 'none' || cs.visibility === 'hidden') return true;
@@ -39,20 +50,51 @@ function isHiddenByStyle(el: Element): boolean {
 }
 
 interface LabelIndex {
-  forId: Map<string, HTMLLabelElement>;
+  /** The `<label for>` pointing at this element, looked up in the element's own tree (document or shadow root). */
+  forEl(el: Element): HTMLLabelElement | undefined;
 }
 
-function buildLabelIndex(doc: Document): LabelIndex {
-  const forId = new Map<string, HTMLLabelElement>();
-  doc.querySelectorAll('label[for]').forEach((l) => forId.set(l.getAttribute('for')!, l as HTMLLabelElement));
-  return { forId };
+function buildLabelIndex(): LabelIndex {
+  const byRoot = new Map<Node, Map<string, HTMLLabelElement>>();
+  return {
+    forEl(el) {
+      if (!el.id) return undefined;
+      const root = el.getRootNode?.() ?? el.ownerDocument;
+      let map = byRoot.get(root);
+      if (!map) {
+        map = new Map();
+        (root as ParentNode).querySelectorAll?.('label[for]').forEach((l) => map!.set(l.getAttribute('for')!, l as HTMLLabelElement));
+        byRoot.set(root, map);
+      }
+      return map.get(el.id);
+    },
+  };
+}
+
+const realControls = (root: ParentNode) =>
+  Array.from(root.querySelectorAll<HTMLElement>(CONTROL_SELECTOR)).filter((c) => !(c instanceof HTMLInputElement && c.type === 'hidden'));
+
+/**
+ * A caption that is not a <label>: in-house forms often use `<div class="label">`, a legend or a
+ * <dt> next to the control. Only trusted while the wrapper holds this one control.
+ */
+function captionNear(el: HTMLElement): string {
+  let node: HTMLElement | null = el.parentElement;
+  for (let depth = 0; node && depth < 3; depth++, node = node.parentElement) {
+    if (realControls(node).length > 1) break;
+    const cap = Array.from(node.querySelectorAll<HTMLElement>('[class*="label" i], legend, dt')).find(
+      (c) => !c.contains(el) && !el.contains(c) && !NOT_A_CAPTION.test(c.getAttribute('class') ?? ''),
+    );
+    const t = cap ? captionText(cap) : '';
+    if (t && t.length <= MAX_NEARBY_CHARS) return t;
+  }
+  return '';
 }
 
 function labelFor(el: HTMLElement, idx: LabelIndex): string {
-  const doc = el.ownerDocument;
-  const fromLabelledBy = byIdsText(doc, el.getAttribute('aria-labelledby'));
+  const fromLabelledBy = byIdsText(idScope(el), el.getAttribute('aria-labelledby'));
   if (fromLabelledBy) return fromLabelledBy;
-  const explicit = el.id ? idx.forId.get(el.id) : undefined;
+  const explicit = idx.forEl(el);
   if (explicit) return captionText(explicit);
   const wrapping = el.closest('label');
   if (wrapping) {
@@ -67,7 +109,10 @@ function labelFor(el: HTMLElement, idx: LabelIndex): string {
     const own = Array.from(parent.children).find((c) => c.tagName === 'LABEL' && !c.hasAttribute('for'));
     if (own) return captionText(own);
   }
-  return '';
+  // Floating labels sit after the input.
+  const next = el.nextElementSibling;
+  if (next?.tagName === 'LABEL' && !next.hasAttribute('for')) return captionText(next);
+  return captionNear(el);
 }
 
 /** True when the field holds an answer right now (files count by attachment). */
@@ -125,13 +170,12 @@ export function sectionOf(el: HTMLElement): Section | undefined {
 }
 
 function groupLabel(first: HTMLElement): string {
-  const doc = first.ownerDocument;
   const fieldset = first.closest('fieldset');
   const legend = fieldset?.querySelector('legend');
   if (legend) return captionText(legend);
   const grp = first.closest('[role="radiogroup"],[role="group"]');
   if (grp) {
-    const l = byIdsText(doc, grp.getAttribute('aria-labelledby')) || grp.getAttribute('aria-label') || '';
+    const l = byIdsText(idScope(grp), grp.getAttribute('aria-labelledby')) || grp.getAttribute('aria-label') || '';
     if (l) return l;
   }
   return nearbyTextFor(first.closest('div,li,p') ?? first);
@@ -145,7 +189,7 @@ function isPlaceholderOption(text: string, value: string): boolean {
   return value === '' || PLACEHOLDER_OPTION.test(normalize(text));
 }
 
-function readCurrentValue(el: HTMLElement, kind: FieldKind, group?: HTMLInputElement[]): string {
+function readCurrentValue(el: HTMLElement, kind: FieldKind, group?: HTMLElement[]): string {
   if (kind === 'select') {
     const s = el as HTMLSelectElement;
     const o = s.selectedOptions[0];
@@ -154,8 +198,8 @@ function readCurrentValue(el: HTMLElement, kind: FieldKind, group?: HTMLInputEle
   if (kind === 'radio' || kind === 'checkbox') return group?.some((r) => isOptionSelected(r)) ? 'checked' : '';
   if (kind === 'file') return (el as HTMLInputElement).files?.length ? (el as HTMLInputElement).files![0]!.name : '';
   if (kind === 'combobox') {
-    if (el instanceof HTMLButtonElement) {
-      // Listbox buttons show the chosen value as their text; "Select One" is the empty state.
+    if (!(el instanceof HTMLInputElement)) {
+      // Listbox triggers show the chosen value as their text; "Select One" is the empty state.
       const t = (el.textContent ?? '').replace(/\s+/g, ' ').trim();
       return PLACEHOLDER_OPTION.test(normalize(t)) ? '' : t;
     }
@@ -164,6 +208,7 @@ function readCurrentValue(el: HTMLElement, kind: FieldKind, group?: HTMLInputEle
     const shown = el.closest('[class*="control" i], [class*="select" i]')?.querySelector('[class*="singleValue" i], [class*="single-value" i]');
     return shown?.textContent?.trim() ?? '';
   }
+  if (kind === 'textarea' && !(el instanceof HTMLTextAreaElement)) return (el.textContent ?? '').trim(); // contenteditable
   return (el as HTMLInputElement | HTMLTextAreaElement).value ?? '';
 }
 
@@ -186,18 +231,50 @@ function isRequired(el: HTMLElement, label: string, group?: HTMLElement[]): bool
 function kindOf(el: HTMLElement): FieldKind | null {
   if (el instanceof HTMLTextAreaElement) return 'textarea';
   if (el instanceof HTMLSelectElement) return 'select';
-  if (el.getAttribute('role') === 'combobox') return 'combobox';
-  if (el instanceof HTMLButtonElement) return el.getAttribute('aria-haspopup') === 'listbox' ? 'combobox' : null;
-  if (el instanceof HTMLInputElement) {
-    const t = el.type;
-    if (SKIP_INPUT_TYPES.has(t)) return null;
-    if (t === 'radio') return 'radio';
-    if (t === 'checkbox') return 'checkbox';
-    if (t === 'file') return 'file';
-    if (t === 'date' || t === 'month') return 'date';
-    return el.hasAttribute('aria-autocomplete') && el.getAttribute('aria-haspopup') === 'listbox' ? 'combobox' : 'text';
+  const role = el.getAttribute('role');
+  if (role === 'combobox') return 'combobox';
+  if (!(el instanceof HTMLInputElement)) {
+    if (el.getAttribute('aria-haspopup') === 'listbox') return 'combobox';
+    if (role === 'radio') return 'radio';
+    if (role === 'checkbox' || role === 'switch') return 'checkbox';
+    return el.hasAttribute('contenteditable') ? 'textarea' : null;
   }
-  return null;
+  const t = el.type;
+  if (SKIP_INPUT_TYPES.has(t)) return null;
+  if (t === 'radio') return 'radio';
+  if (t === 'checkbox') return 'checkbox';
+  if (t === 'file') return 'file';
+  if (t === 'date' || t === 'month') return 'date';
+  return el.hasAttribute('aria-autocomplete') && el.getAttribute('aria-haspopup') === 'listbox' ? 'combobox' : 'text';
+}
+
+/**
+ * A native radio, checkbox or select that the site hides behind its own styled widget. It is still
+ * the real control (clicking or setting it works), as long as it is the control itself that is
+ * hidden and not the whole section around it.
+ */
+function isStyledNative(el: HTMLElement, idx: LabelIndex): boolean {
+  const parent = el.parentElement;
+  if (el instanceof HTMLSelectElement) {
+    // A custom dropdown next to it is discovered on its own; do not answer the same question twice.
+    return !!parent && !isHiddenByStyle(parent) && !parent.querySelector('[role="combobox"], [aria-haspopup="listbox"]');
+  }
+  if (!(el instanceof HTMLInputElement) || (el.type !== 'radio' && el.type !== 'checkbox')) return false;
+  if (parent && !isHiddenByStyle(parent)) return true;
+  const label = el.closest('label') ?? idx.forEl(el);
+  return !!label && !isHiddenByStyle(label);
+}
+
+/** Text of a custom (ARIA) radio or checkbox. */
+function ariaOptionText(el: HTMLElement, idx: LabelIndex): string {
+  const explicit = idx.forEl(el);
+  return (
+    byIdsText(idScope(el), el.getAttribute('aria-labelledby')) ||
+    (explicit ? captionText(explicit) : '') ||
+    el.getAttribute('aria-label') ||
+    (el.textContent ?? '').replace(/\s+/g, ' ').trim() ||
+    labelFor(el, idx)
+  );
 }
 
 /**
@@ -205,35 +282,47 @@ function kindOf(el: HTMLElement): FieldKind | null {
  * name become a single descriptor with `options`.
  */
 export function buildDescriptors(root: ParentNode, doc: Document = (root as Document).ownerDocument ?? (root as Document)): FieldDescriptor[] {
-  const idx = buildLabelIndex(doc);
+  const idx = buildLabelIndex();
   const out: FieldDescriptor[] = [];
   const seenGroups = new Set<string>();
-  const controls = Array.from(root.querySelectorAll<HTMLElement>(CONTROL_SELECTOR));
+  const seenAria = new Set<HTMLElement>();
+  const controls = deepQueryAll<HTMLElement>(root, CONTROL_SELECTOR);
   let counter = 0;
 
   for (const el of controls) {
     if (!isFillable(el) || isCaptchaElement(el)) continue;
     // A combobox wrapper that contains the real input: the inner input is the control.
-    if (el.getAttribute('role') === 'combobox' && !(el instanceof HTMLInputElement) && el.querySelector('input[role="combobox"]')) continue;
+    if (!(el instanceof HTMLInputElement) && el.querySelector('input[role="combobox"]')) continue;
     const kind = kindOf(el);
     if (!kind) continue;
-    if (kind !== 'file' && isHiddenByStyle(el)) continue;
+    if (kind !== 'file' && isHiddenByStyle(el) && !isStyledNative(el, idx)) continue;
 
-    let group: HTMLInputElement[] | undefined;
+    let group: HTMLElement[] | undefined;
     let options: FieldOption[] | undefined;
     let label = '';
 
-    if (kind === 'radio' || kind === 'checkbox') {
+    if ((kind === 'radio' || kind === 'checkbox') && !(el instanceof HTMLInputElement)) {
+      // Custom ARIA choices: radios group by their radiogroup, checkboxes only by a labelled group.
+      if (seenAria.has(el)) continue;
+      const role = el.getAttribute('role')!;
+      const container =
+        kind === 'radio' ? el.closest('[role="radiogroup"]') : el.closest('[role="group"][aria-labelledby], [role="group"][aria-label]');
+      const members = container ? Array.from(container.querySelectorAll<HTMLElement>(`[role="${role}"]`)) : [el];
+      members.forEach((m) => seenAria.add(m));
+      group = members;
+      options = members.map((m) => ({ text: ariaOptionText(m, idx), value: m.getAttribute('value') ?? m.getAttribute('data-value') ?? '', element: m }));
+      label = members.length > 1 ? groupLabel(members[0]!) : labelFor(el, idx) || groupLabel(el);
+    } else if (kind === 'radio' || kind === 'checkbox') {
       const input = el as HTMLInputElement;
-      const scope = input.form ?? doc;
+      const scope = input.form ?? ((input.getRootNode?.() as ParentNode | undefined) ?? doc);
       const siblings = input.name
         ? Array.from(scope.querySelectorAll<HTMLInputElement>(`input[type="${kind}"]`)).filter((i) => i.name === input.name)
         : [input];
       const key = `${kind}:${input.name || counter}:${input.form?.id ?? ''}`;
       if (input.name && seenGroups.has(key)) continue;
       seenGroups.add(key);
-      group = siblings.filter((s) => !isHiddenByStyle(s) || s.type === kind);
-      options = group.map((s) => ({
+      group = siblings;
+      options = siblings.map((s) => ({
         text: labelFor(s, idx) || s.getAttribute('aria-label') || s.value,
         value: s.value,
         element: s,
@@ -246,7 +335,7 @@ export function buildDescriptors(root: ParentNode, doc: Document = (root as Docu
       label = labelFor(el, idx);
     }
 
-    const ariaLabel = el.getAttribute('aria-label') ?? undefined;
+    const ariaLabel = el.getAttribute('aria-label') ?? el.getAttribute('title') ?? undefined;
     const placeholder = (el as HTMLInputElement).placeholder || undefined;
     const nearby = !label && !ariaLabel ? nearbyTextFor(el) : undefined;
 
@@ -261,6 +350,7 @@ export function buildDescriptors(root: ParentNode, doc: Document = (root as Docu
       htmlId: el.id || undefined,
       autocomplete: el.getAttribute('autocomplete') ?? undefined,
       automationId: el.getAttribute('data-automation-id') ?? undefined,
+      testId: el.getAttribute('data-testid') ?? el.getAttribute('data-test-id') ?? el.getAttribute('data-qa') ?? undefined,
       nearbyText: nearby,
       options,
       section: sectionOf(el),

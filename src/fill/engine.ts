@@ -4,6 +4,7 @@ import type {
   FieldReport,
   FillOptions,
   FillStatus,
+  FillValue,
   Match,
   PlatformAdapter,
   ProfileKey,
@@ -69,98 +70,134 @@ export function assignEntryIndexes(fields: FieldDescriptor[], matches: (Match | 
   }
 }
 
+/** Shorter labels are field names ("Extension"), not questions worth looking up in the answer bank. */
+const MIN_QUESTION_CHARS = 12;
+const BANK_KINDS = new Set<FieldDescriptor['kind']>(['text', 'select', 'radio', 'combobox']);
+
+const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 export async function runFill({ adapter, ctx, profile, options }: RunFillInput): Promise<FillRun> {
-  const fields = adapter.getFields(ctx);
-  const matches = fields.map((d) => matchField(d));
-  assignEntryIndexes(fields, matches);
   const reports: FieldReport[] = [];
   const descriptors = new Map<string, FieldDescriptor>();
   const generated = new Map<string, string>();
 
-  for (const [i, d] of fields.entries()) {
-    descriptors.set(d.id, d);
-    const label = d.label || d.ariaLabel || d.placeholder || d.nearbyText?.slice(0, 80) || d.name || '(unlabeled)';
-    const base = { id: d.id, label, kind: d.kind, required: d.required };
-    const report = (status: FillStatus, extra: Partial<FieldReport> = {}): void => {
-      // Judged on the live value after the attempt: typed-but-unconfirmed text is yellow, not red.
-      const emptyRequired = d.required && !FILLED.includes(status) && !hasValue(d);
-      reports.push({ ...base, confidence: 0, status, emptyRequired, ...extra });
-    };
+  const first = adapter.getFields(ctx);
+  await fillFields(first);
 
-    const match = matches[i] ?? null;
-    if (!match) {
-      report('unmatched');
-      continue;
-    }
-    if (match.key === 'freeText') {
-      const free = { key: match.key, confidence: match.confidence } as const;
-      if (!options.freeText) {
-        report('unmatched', { ...free, detail: 'free-text question' });
-        continue;
-      }
-      // Never spend an API call on a question the user already answered.
-      if (d.currentValue && !options.overwrite) {
-        report('skipped-existing', { ...free, valuePreview: preview(d.currentValue) });
-        continue;
-      }
-      try {
-        const answer = await options.freeText(d);
-        if (answer.kind === 'none') {
-          report('unmatched', { ...free, detail: answer.reason });
-          continue;
-        }
-        const result = await adapter.fill(d, { type: 'text', text: answer.text }, options);
-        if (result.status !== 'filled') {
-          report(result.status, { ...free, detail: result.detail });
-          continue;
-        }
-        if (answer.kind === 'ai') {
-          generated.set(d.id, answer.text);
-          report('ai', { ...free, valuePreview: preview(answer.text), detail: 'AI draft from your profile and posting: review before submitting' });
-        } else {
-          // A close match to a saved answer is trusted; a loose one is filled but flagged.
-          report(answer.score >= BANK_CONFIDENT ? 'filled' : 'low-confidence', {
-            key: match.key,
-            confidence: answer.score,
-            valuePreview: preview(answer.text),
-            detail: 'from your answer bank',
-          });
-        }
-      } catch (e) {
-        report('failed', { ...free, detail: (e as Error).message });
-      }
-      continue;
-    }
-    if (match.confidence < MIN_FILL_CONFIDENCE) {
-      report('unmatched', { key: match.key, confidence: match.confidence, detail: `weak match for ${match.key}` });
-      continue;
-    }
-
-    const value = resolveValue(match.key, profile, d);
-    if (!value) {
-      report('no-data', { key: match.key, confidence: match.confidence, detail: `no profile data for ${match.key}` });
-      continue;
-    }
-    if (d.currentValue && !options.overwrite) {
-      report('skipped-existing', { key: match.key, confidence: match.confidence, valuePreview: preview(d.currentValue) });
-      continue;
-    }
-
-    try {
-      const result = await adapter.fill(d, value, options);
-      if (result.status === 'filled') {
-        const status: FillStatus = match.confidence >= HIGH_CONFIDENCE ? 'filled' : 'low-confidence';
-        report(status, {
-          key: match.key,
-          confidence: match.confidence,
-          valuePreview: preview(result.detail ?? (value.type === 'text' ? value.text : value.type)),
-        });
-      } else {
-        report(result.status, { key: match.key, confidence: match.confidence, detail: result.detail });
-      }
-    } catch (e) {
-      report('failed', { key: match.key, confidence: match.confidence, detail: (e as Error).message });
-    }
+  // An answer can reveal follow-up fields ("Yes" → "please explain"): look once more for new ones.
+  const pause = options.rescanDelayMs ?? 150;
+  if (first.length && pause > 0) {
+    await delay(pause);
+    const seen = new Set(first.map((d) => d.element));
+    const revealed = adapter.getFields(ctx).filter((d) => !seen.has(d.element));
+    revealed.forEach((d, n) => (d.id = `g${n}`));
+    if (revealed.length) await fillFields(revealed);
   }
   return { reports, descriptors, generated };
+
+  async function fillFields(fields: FieldDescriptor[]): Promise<void> {
+    const matches = fields.map((d) => matchField(d));
+    assignEntryIndexes(fields, matches);
+
+    for (const [i, d] of fields.entries()) {
+      descriptors.set(d.id, d);
+      const label = d.label || d.ariaLabel || d.placeholder || d.nearbyText?.slice(0, 80) || d.name || '(unlabeled)';
+      const base = { id: d.id, label, kind: d.kind, required: d.required };
+      const report = (status: FillStatus, extra: Partial<FieldReport> = {}): void => {
+        // Judged on the live value after the attempt: typed-but-unconfirmed text is yellow, not red.
+        const emptyRequired = d.required && !FILLED.includes(status) && !hasValue(d);
+        reports.push({ ...base, confidence: 0, status, emptyRequired, ...extra });
+      };
+
+      const match = matches[i] ?? null;
+      if (!match) {
+        // No rule knows this field. If it reads like a question you have answered before, use that.
+        const question = (d.label || d.nearbyText || '').trim();
+        const bank = BANK_KINDS.has(d.kind) && question.length >= MIN_QUESTION_CHARS ? options.bankAnswer?.(d) : null;
+        if (bank && !(d.currentValue && !options.overwrite)) {
+          const value: FillValue = d.kind === 'text' ? { type: 'text', text: bank.text } : { type: 'choice', text: bank.text, targets: [bank.text] };
+          const result = await adapter.fill(d, value, options).catch(() => null);
+          if (result?.status === 'filled') {
+            report(bank.score >= BANK_CONFIDENT ? 'filled' : 'low-confidence', {
+              confidence: bank.score,
+              valuePreview: preview(result.detail ?? bank.text),
+              detail: 'from your answer bank',
+            });
+            continue;
+          }
+        }
+        report('unmatched');
+        continue;
+      }
+      if (match.key === 'freeText') {
+        const free = { key: match.key, confidence: match.confidence } as const;
+        if (!options.freeText) {
+          report('unmatched', { ...free, detail: 'free-text question' });
+          continue;
+        }
+        // Never spend an API call on a question the user already answered.
+        if (d.currentValue && !options.overwrite) {
+          report('skipped-existing', { ...free, valuePreview: preview(d.currentValue) });
+          continue;
+        }
+        try {
+          const answer = await options.freeText(d);
+          if (answer.kind === 'none') {
+            report('unmatched', { ...free, detail: answer.reason });
+            continue;
+          }
+          const result = await adapter.fill(d, { type: 'text', text: answer.text }, options);
+          if (result.status !== 'filled') {
+            report(result.status, { ...free, detail: result.detail });
+            continue;
+          }
+          if (answer.kind === 'ai') {
+            generated.set(d.id, answer.text);
+            report('ai', { ...free, valuePreview: preview(answer.text), detail: 'AI draft from your profile and posting: review before submitting' });
+          } else {
+            // A close match to a saved answer is trusted; a loose one is filled but flagged.
+            report(answer.score >= BANK_CONFIDENT ? 'filled' : 'low-confidence', {
+              key: match.key,
+              confidence: answer.score,
+              valuePreview: preview(answer.text),
+              detail: 'from your answer bank',
+            });
+          }
+        } catch (e) {
+          report('failed', { ...free, detail: (e as Error).message });
+        }
+        continue;
+      }
+      if (match.confidence < MIN_FILL_CONFIDENCE) {
+        report('unmatched', { key: match.key, confidence: match.confidence, detail: `weak match for ${match.key}` });
+        continue;
+      }
+
+      const value = resolveValue(match.key, profile, d);
+      if (!value) {
+        report('no-data', { key: match.key, confidence: match.confidence, detail: `no profile data for ${match.key}` });
+        continue;
+      }
+      if (d.currentValue && !options.overwrite) {
+        report('skipped-existing', { key: match.key, confidence: match.confidence, valuePreview: preview(d.currentValue) });
+        continue;
+      }
+
+      try {
+        const result = await adapter.fill(d, value, options);
+        if (result.status === 'filled') {
+          const status: FillStatus = match.confidence >= HIGH_CONFIDENCE ? 'filled' : 'low-confidence';
+          report(status, {
+            key: match.key,
+            confidence: match.confidence,
+            valuePreview: preview(result.detail ?? (value.type === 'text' ? value.text : value.type)),
+          });
+        } else {
+          report(result.status, { key: match.key, confidence: match.confidence, detail: result.detail });
+        }
+      } catch (e) {
+        report('failed', { key: match.key, confidence: match.confidence, detail: (e as Error).message });
+      }
+    }
+  }
 }

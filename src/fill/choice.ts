@@ -64,8 +64,9 @@ export function chooseInGroup(options: FieldOption[], targets: string[]): GroupC
   return snapshot() !== before ? picked : { ...picked, unconfirmed: true };
 }
 
-/** Set a lone checkbox to the desired state. */
-export function setCheckbox(input: HTMLInputElement, checked: boolean): boolean {
-  if (input.checked !== checked && !safeClick(input)) return false;
-  return input.checked === checked;
+/** Set a lone checkbox (native, or a custom ARIA checkbox / switch) to the desired state. */
+export function setCheckbox(input: HTMLElement, checked: boolean): boolean {
+  const isOn = () => (input instanceof HTMLInputElement ? input.checked : isOptionSelected(input));
+  if (isOn() !== checked && !safeClick(input)) return false;
+  return isOn() === checked;
 }

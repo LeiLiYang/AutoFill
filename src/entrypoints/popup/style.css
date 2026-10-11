@@ -16,3 +16,4 @@ a { font-size: 13px; }
 @media (prefers-color-scheme: dark) {
   :root { color: #e8e8e8; background: #1f2227; } .note { color: #aaa; } a { color: #8ab4f8; }
 }
+.note.err { color: #d93025; }

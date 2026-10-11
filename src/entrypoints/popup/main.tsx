@@ -12,6 +12,7 @@ function Popup() {
   const [overwrite, setOverwrite] = useState(false);
   const [frames, setFrames] = useState<FrameReport[]>([]);
   const [busy, setBusy] = useState(false);
+  const [fillError, setFillError] = useState<string | null>(null);
 
   useEffect(() => {
     chrome.tabs.query({ active: true, currentWindow: true }).then(([t]) => setTabId(t?.id ?? null));
@@ -32,8 +33,10 @@ function Popup() {
   const fill = async () => {
     if (tabId == null) return;
     setBusy(true);
+    setFillError(null);
     const msg: ToBackground = { type: 'trigger-fill', tabId, overwrite };
-    await chrome.runtime.sendMessage(msg);
+    const res = (await chrome.runtime.sendMessage(msg).catch((e) => ({ ok: false, error: String(e) }))) as { ok: boolean; error?: string } | undefined;
+    if (!res?.ok) setFillError(`Could not fill this page. ${res?.error ?? 'The extension did not respond: reload the page and try again.'}`);
     setBusy(false);
   };
 
@@ -76,10 +79,14 @@ function Popup() {
       <button className="primary" onClick={fill} disabled={busy || tabId == null}>
         {busy ? 'Filling…' : 'Fill this page'}
       </button>
+      {fillError && <p className="note err" role="alert">{fillError}</p>}
       <label className="check">
         <input type="checkbox" checked={overwrite} onChange={(e) => toggleOverwrite(e.target.checked)} />
         Overwrite already-filled fields
       </label>
+      {!busy && !fillError && frames.length > 0 && all.length === 0 && (
+        <p className="note">No form fields found on this page. If the form opens after you click Apply, open it and fill again.</p>
+      )}
       {all.length > 0 && (
         <ul className="summary">
           <li><span className="dot g" /> {green} filled</li>

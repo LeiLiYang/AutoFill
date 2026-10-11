@@ -19,7 +19,7 @@ const clientId = env.WXT_OAUTH_CLIENT_ID?.trim() || 'REPLACE_WITH_OAUTH_CLIENT_I
 export default defineConfig({
   srcDir: 'src',
   modules: ['@wxt-dev/module-react'],
-  manifest: ({ mode }) => ({
+  manifest: () => ({
     name: 'Job Application Autofill',
     description: 'Fills job application forms from your local profile. Never submits anything.',
     ...(key ? { key } : {}),
@@ -34,17 +34,10 @@ export default defineConfig({
       'alarms',
       'offscreen',
     ],
-    host_permissions: [
-      '*://*.greenhouse.io/*',
-      '*://jobs.lever.co/*',
-      '*://jobs.ashbyhq.com/*',
-      '*://*.myworkdayjobs.com/*',
-      '*://www.linkedin.com/*',
-      'https://sheets.googleapis.com/*',
-      'https://api.anthropic.com/*',
-      // Test build only: Playwright serves fixtures from localhost.
-      ...(mode === 'test' ? ['http://localhost/*', 'http://127.0.0.1/*'] : []),
-    ],
+    // Every site: application forms are often embedded in an iframe from another domain (an ATS the
+    // company's careers page loads), and a frame can only be filled with access to its origin. This
+    // also covers the Google Sheets and LLM API calls. It does not change when the extension runs.
+    host_permissions: ['<all_urls>'],
     oauth2: {
       client_id: clientId,
       scopes: ['https://www.googleapis.com/auth/spreadsheets'],

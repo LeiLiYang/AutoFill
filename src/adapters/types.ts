@@ -42,6 +42,8 @@ export interface FieldDescriptor {
   htmlId?: string;
   autocomplete?: string;
   automationId?: string;
+  /** data-testid / data-qa: often the only readable name on in-house forms. */
+  testId?: string;
   nearbyText?: string;
   options?: FieldOption[];
   required: boolean;
@@ -86,6 +88,10 @@ export interface FillOptions {
   getFile: (kind: FileKind) => Promise<File | null>;
   /** Answers open-ended questions (answer bank first, then the optional LLM). Absent = leave them empty. */
   freeText?: (d: FieldDescriptor) => Promise<FreeTextResult>;
+  /** A saved answer for a question no rule recognises (dropdowns, radios and short text boxes too). */
+  bankAnswer?: (d: FieldDescriptor) => { text: string; score: number } | null;
+  /** Pause before looking for fields that a filled answer revealed. 0 turns the second look off. */
+  rescanDelayMs?: number;
 }
 
 export interface FillResult {

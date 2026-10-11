@@ -28,7 +28,7 @@ function attrCandidates(d: FieldDescriptor): { text: string; isAutocomplete: boo
         out.push({ text: attrWords(tok), isAutocomplete: true });
     }
   }
-  for (const v of [d.name, d.htmlId, d.automationId]) {
+  for (const v of [d.name, d.htmlId, d.automationId, d.testId]) {
     if (v) out.push({ text: attrWords(v), isAutocomplete: false });
   }
   return out;
@@ -68,8 +68,8 @@ export function matchField(d: FieldDescriptor, rules: MatchRule[] = MATCH_RULES)
     }
   }
 
-  // Stage 2b: nearby text only (weaker evidence), only when there is no label at all.
-  if (!labels.length && d.nearbyText) {
+  // Stage 2b: nearby text only (weaker evidence). It exists only for fields with no label of their own.
+  if (d.nearbyText) {
     const near = normalize(d.nearbyText);
     for (const r of applicable) {
       if (r.label && !blockedBy(r) && r.label.test(near)) {
