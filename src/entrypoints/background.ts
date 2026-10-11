@@ -1,4 +1,4 @@
-import { savePosting } from '../background/savePosting';
+import { collectFormAnswers, savePosting } from '../background/savePosting';
 import { describeLlmError, sdkDeps, type AnswerResult, type ClaudeDeps } from '../llm/client';
 import { llmConfig, notReadyReason } from '../llm/config';
 import { classifyFields } from '../llm/classifyFields';
@@ -6,7 +6,8 @@ import { draftKey, getDraft, saveDraft } from '../llm/draftCache';
 import { makeClient } from '../llm/providers';
 import type { Fetch } from '../llm/providers/types';
 import { answerQuestion } from '../llm/answerQuestion';
-import { cachePosting, getCachedPosting } from '../posting/cache';
+import { rememberAnswers } from '../posting/answerStore';
+import { cachePosting, findCachedPosting, getCachedPosting, type CachedPosting } from '../posting/cache';
 import { getFile } from '../profile/files';
 import { chromeLocalStore } from '../profile/storage';
 import { loadProfile, loadSettings, saveProfile } from '../profile/store';
@@ -19,6 +20,7 @@ import {
   type FrameReport,
   type LogApplicationResponse,
   type SaveAnswersResult,
+  type SavePostingResult,
   type TestLlmResult,
   type TestSheetsResult,
   type ToBackground,
@@ -89,8 +91,19 @@ function enqueue(tabId: number, job: () => Promise<void>): Promise<void> {
   return next;
 }
 
+/** Fills still running, by tab: saving waits for them so it records the answers the fill is about to write. */
+const fillsRunning = new Map<number, Promise<unknown>>();
+
 /** Inject the filler into every reachable frame of the tab, then ask each frame to fill. User-triggered only. */
-async function triggerFill(tabId: number, overwriteOverride?: boolean) {
+function triggerFill(tabId: number, overwriteOverride?: boolean): Promise<void> {
+  const run = runFillInTab(tabId, overwriteOverride).finally(() => {
+    if (fillsRunning.get(tabId) === run) fillsRunning.delete(tabId);
+  });
+  fillsRunning.set(tabId, run);
+  return run;
+}
+
+async function runFillInTab(tabId: number, overwriteOverride?: boolean) {
   const settings = await loadSettings();
   const overwrite = overwriteOverride ?? settings.overwrite;
   await enqueue(tabId, () => chrome.storage.session.set({ [reportsKey(tabId)]: [] }));
@@ -120,6 +133,47 @@ async function triggerFill(tabId: number, overwriteOverride?: boolean) {
     notice = `Part of this page could not be filled: ${failure.replace(/^Error:\s*/, '')}`;
   }
   await enqueue(tabId, () => pushPanel(tabId, false, notice));
+  // Record what this step of the form now holds: a later step, or a save from another page, adds to it.
+  await recordAnswers(tabId, frameIds).catch(() => undefined);
+}
+
+async function recordAnswers(tabId: number, frameIds: number[]) {
+  const page = await postingFor(tabId);
+  if (page) await rememberAnswers(chromeLocalStore, page.canonicalUrl, await collectFormAnswers(tabId, frameIds));
+}
+
+const lastPostingKey = (tabId: number) => `lastPosting:${tabId}`;
+const EARLIER_POSTING_MAX_AGE_MS = 3 * 60 * 60 * 1000;
+const siteOf = (url: string) => {
+  try {
+    return new URL(url).hostname.split('.').slice(-2).join('.');
+  } catch {
+    return '';
+  }
+};
+
+/**
+ * The posting an application form belongs to. The form's own address usually maps back to the
+ * posting's (same canonical URL). When it does not (an in-house site, or a form hosted by another
+ * company's ATS), use the posting last read in this tab or the tab that opened it, but only if it is
+ * recent and is the same company or the same site: never another employer's description.
+ */
+async function earlierPosting(tabId: number | undefined, canonicalUrl: string, company: string): Promise<CachedPosting | null> {
+  const direct = await getCachedPosting(chromeLocalStore, canonicalUrl);
+  if (direct || tabId == null) return direct;
+  const tab = await chrome.tabs.get(tabId).catch(() => undefined);
+  for (const id of [tabId, tab?.openerTabId]) {
+    if (id == null) continue;
+    const key = lastPostingKey(id);
+    const last = ((await chrome.storage.session.get(key))[key] ?? null) as { url: string; at: number } | null;
+    if (!last || Date.now() - last.at > EARLIER_POSTING_MAX_AGE_MS) continue;
+    const hit = await findCachedPosting(
+      chromeLocalStore,
+      (url, p) => url === last.url && (siteOf(url) === siteOf(canonicalUrl) || (!!company && normalize(p.company) === normalize(company))),
+    );
+    if (hit) return hit;
+  }
+  return null;
 }
 
 function storeFrameReport(tabId: number, frameId: number, report: FrameReport) {
@@ -202,7 +256,23 @@ async function openLogPanel(tabId: number) {
   await chrome.tabs.sendMessage(tabId, { type: 'open-log' } satisfies ToContent, { frameId: 0 });
 }
 
-const runSavePosting = (tabId: number) => savePosting(tabId, { ensureInjected, getFrames: getReports });
+/** Inject into every frame that can be reached (some cannot: sandboxed, or a browser page). */
+async function injectAllFrames(tabId: number) {
+  try {
+    await chrome.scripting.executeScript({ target: { tabId, allFrames: true }, files: [CONTENT_SCRIPT] });
+  } catch {
+    await ensureInjected(tabId);
+  }
+}
+
+const runSavePosting = (tabId: number) =>
+  savePosting(tabId, {
+    injectAll: injectAllFrames,
+    frames: framesWithExtension,
+    kv: chromeLocalStore,
+    postingForForm: (id, form) => earlierPosting(id, form.canonicalUrl, form.company),
+    whenIdle: async (id) => void (await fillsRunning.get(id)?.catch(() => undefined)),
+  });
 
 /** The Anthropic client factory and `fetch` are swappable so end-to-end tests never call a real API. */
 let claudeFactory: (apiKey: string) => ClaudeDeps = sdkDeps;
@@ -238,7 +308,7 @@ async function readPosting(tabId: number): Promise<PagePosting | null> {
   if (!p.formOnly && p.descriptionMd.length >= 200) {
     return { canonicalUrl: p.canonicalUrl, posting: { title: p.title, company: p.company, descriptionMd: p.descriptionMd } };
   }
-  const cached = await getCachedPosting(chromeLocalStore, p.canonicalUrl);
+  const cached = await earlierPosting(tabId, p.canonicalUrl, p.company);
   return { canonicalUrl: p.canonicalUrl, posting: cached ?? { title: p.title, company: p.company } };
 }
 
@@ -292,12 +362,25 @@ async function testSheets(): Promise<TestSheetsResult> {
   }
 }
 
-/** The user confirmed the log card: write the row, and save the posting too if they ticked that. */
-async function runLog(tabId: number | undefined, msg: Extract<ToBackground, { type: 'log-application' }>): Promise<LogApplicationResponse> {
-  const log = await logger.logApplication(msg.entry, { force: msg.force });
-  const target = msg.tabId ?? tabId;
-  if (log.ok && msg.alsoSavePosting && target != null) return { log, save: await runSavePosting(target) };
-  return { log };
+/**
+ * The user confirmed the log card: write the row. Always answers, even when something unexpected
+ * throws, so the card can say what went wrong instead of silently going back to idle. Saving the
+ * posting is a separate request the card makes afterwards: a slow or failed save cannot hide the log.
+ */
+async function runLog(msg: Extract<ToBackground, { type: 'log-application' }>): Promise<LogApplicationResponse> {
+  try {
+    return { log: await logger.logApplication(msg.entry, { force: msg.force }) };
+  } catch (e) {
+    return { log: { ok: false, code: 'error', message: `Could not log this application: ${(e as Error)?.message ?? String(e)}` } };
+  }
+}
+
+const LOG_MENU_ID = 'log-posting';
+/** Right-click → "Log this posting": the same card as the popup button and Alt+Shift+L. */
+function createLogMenu() {
+  chrome.contextMenus.removeAll(() => {
+    chrome.contextMenus.create({ id: LOG_MENU_ID, title: 'Log this posting', contexts: ['all'] }, () => void chrome.runtime.lastError);
+  });
 }
 
 export default defineBackground(() => {
@@ -316,8 +399,17 @@ export default defineBackground(() => {
   }
 
   // Retry queued rows on browser start and every few minutes (never with a sign-in popup).
-  chrome.runtime.onInstalled.addListener(() => chrome.alarms.create(RETRY_ALARM, { periodInMinutes: RETRY_EVERY_MINUTES }));
+  chrome.runtime.onInstalled.addListener(() => {
+    chrome.alarms.create(RETRY_ALARM, { periodInMinutes: RETRY_EVERY_MINUTES });
+    createLogMenu();
+  });
+  chrome.contextMenus.onClicked.addListener((info, tab) => {
+    if (info.menuItemId !== LOG_MENU_ID || tab?.id == null) return;
+    const tabId = tab.id;
+    void openLogPanel(tabId).catch((e) => flagOnIcon(tabId, explain(e)));
+  });
   chrome.runtime.onStartup.addListener(() => {
+    createLogMenu();
     chrome.alarms.create(RETRY_ALARM, { periodInMinutes: RETRY_EVERY_MINUTES });
     void logger.retryPending(false);
   });
@@ -363,11 +455,11 @@ export default defineBackground(() => {
       case 'save-posting': {
         const target = msg.tabId ?? tabId;
         if (target == null) return;
-        runSavePosting(target).then(sendResponse);
+        runSavePosting(target).then(sendResponse, (e) => sendResponse({ ok: false, code: 'error', message: String(e) } satisfies SavePostingResult));
         return true;
       }
       case 'log-application':
-        runLog(tabId, msg).then(sendResponse);
+        runLog(msg).then(sendResponse);
         return true;
       case 'test-sheets':
         testSheets().then(sendResponse);
@@ -388,7 +480,18 @@ export default defineBackground(() => {
           title: msg.posting.title,
           company: msg.posting.company,
           descriptionMd: msg.posting.descriptionMd,
-        }).then(() => sendResponse({ ok: true }));
+          location: msg.posting.location,
+          salary: msg.posting.salary,
+        })
+          // Remember which posting this tab was on: its application form may live at an unrelated address.
+          .then(() => (tabId == null ? undefined : chrome.storage.session.set({ [lastPostingKey(tabId)]: { url: msg.posting.canonicalUrl, at: Date.now() } })))
+          .then(() => sendResponse({ ok: true }), () => sendResponse({ ok: false }));
+        return true;
+      case 'earlier-posting':
+        earlierPosting(tabId, msg.canonicalUrl, msg.company).then(
+          (p) => sendResponse(p ? { title: p.title, location: p.location } : null),
+          () => sendResponse(null),
+        );
         return true;
       case 'queue-retry': {
         const job = msg.id ? logger.retryOne(msg.id, { force: msg.force }) : logger.retryPending(true);

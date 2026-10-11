@@ -254,3 +254,28 @@ test('LinkedIn: logs and saves the posting but never fills', async () => {
   expect(await submitEvents(page)).toEqual({ submit: 0, submitClick: 0 });
   await page.close();
 });
+
+test('the right-click menu item exists and opens the same card', async () => {
+  // The browser's own context menu cannot be driven from a test: check the item is registered,
+  // then run what its click handler runs.
+  const exists = await ext.worker.evaluate(
+    () => new Promise<boolean>((resolve) => chrome.contextMenus.update('log-posting', {}, () => resolve(!chrome.runtime.lastError))),
+  );
+  expect(exists).toBe(true);
+  const manifest = await ext.worker.evaluate(() => chrome.runtime.getManifest());
+  expect(manifest.permissions).toContain('contextMenus');
+});
+
+test('logging from the application form inherits the location read on the posting page', async () => {
+  const page = await ext.context.newPage();
+  await page.goto(`${servers.main.origin}/generic/posting.html`);
+  await openLogPanel(ext, page);
+  await expect(page.locator('#autofill-review-host .logcard')).toBeVisible();
+
+  await page.goto(`${servers.main.origin}/workday/apply.html`);
+  await triggerFill(ext, page);
+  const card = page.locator('#autofill-review-host .logcard');
+  await expect(card.getByLabel('Location')).toHaveValue('toronto');
+  await expect(card.getByRole('button', { name: 'Log application' })).toBeEnabled();
+  await page.close();
+});

@@ -20,7 +20,7 @@ export interface PanelProps {
   onScroll: (frameId: number, fieldId: string) => void;
   onSaveAnswers: () => Promise<SaveAnswersResult>;
   onSavePosting: () => Promise<SavePostingResult>;
-  onLog?: (entry: LogEntry, force: boolean, alsoSavePosting: boolean) => Promise<LogApplicationResponse>;
+  onLog?: (entry: LogEntry, force: boolean) => Promise<LogApplicationResponse | undefined>;
   onClose: () => void;
 }
 
@@ -48,6 +48,10 @@ function reasonFor(r: FieldReport): string {
   const specific = ['unmatched', 'low-confidence', 'failed', 'ai'].includes(r.status) && r.detail;
   return specific ? r.detail! : (STATUS_TEXT[r.status] ?? r.status);
 }
+
+/** Typing in the panel must not trigger the host page's keyboard shortcuts. */
+const stop = (e: { stopPropagation(): void }) => e.stopPropagation();
+const KEEP_KEYS_IN_PANEL = { onKeyDown: stop, onKeyUp: stop, onKeyPress: stop };
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
@@ -122,7 +126,7 @@ export function Panel({ frames, filling, notice, logOnly, logOnlyNote, prefill, 
     ));
 
   return (
-    <aside className="panel" role="complementary" aria-label="Autofill review">
+    <aside className="panel" role="complementary" aria-label="Autofill review" {...KEEP_KEYS_IN_PANEL}>
       <header>
         <strong>Autofill review</strong>
         <button className="close" onClick={onClose} aria-label="Close review panel">×</button>
@@ -175,7 +179,8 @@ export function Panel({ frames, filling, notice, logOnly, logOnlyNote, prefill, 
         </section>
       )}
 
-      {prefill && onLog && <LogCard prefill={prefill} onLog={onLog} />}
+      {/* Keyed by posting: moving to another job starts a fresh card instead of showing the last one as "Logged". */}
+      {prefill && onLog && <LogCard key={`${prefill.url}|${prefill.location}|${prefill.category}`} prefill={prefill} onLog={onLog} onSavePosting={onSavePosting} />}
 
       <footer>
         {!logOnly && (

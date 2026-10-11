@@ -70,7 +70,7 @@ Click **Save** (bottom bar) after editing.
 
 ### Log a posting without applying
 
-You can log any job to your sheet whether or not you are applying. On a posting page (or any page), click the toolbar icon → **Log posting only (no autofill)**, or press **Alt+Shift+L**. The log card opens with company, category, location and URL filled in from the page, and **no form field is read or filled**. Logging never marks a job as applied: column C (Status) is always left empty, so use it however you like in the sheet. If you later log the same job, you get the duplicate warning with the row number, so you can update that row instead.
+You can log any job to your sheet whether or not you are applying. On a posting page (or any page), click the toolbar icon → **Log posting only (no autofill)**, press **Alt+Shift+L**, or right-click anywhere on the page → **Log this posting**. (Chrome decides where extension items sit in the right-click menu, so it appears in the extensions group rather than at the very top.) The log card opens with company, category, location and URL filled in from the page, and **no form field is read or filled**. Logging never marks a job as applied: column C (Status) is always left empty, so use it however you like in the sheet. If you later log the same job, you get the duplicate warning with the row number, so you can update that row instead.
 
 ### Log application
 
@@ -89,10 +89,11 @@ The panel includes a **Log application** card, pre-filled and fully editable:
 
 - Allowed Category/Location values live in one file, [`src/config/tracking.ts`](src/config/tracking.ts), used for both validation and the dropdowns.
 - Location rules, in order: a single listed city → that city; a single unlisted Canadian place or "Remote - Canada" → `canada`; a single US place or "Remote - US" → `USA`; several cities in one country → that country (`canada`/`USA`); several countries → `canada`. "London, ON" is Canada, "Vancouver, WA" is the US. Every rule is unit-tested.
+- Where the location is read from: the platform's own markup, schema.org `JobPosting` data (including remote postings), a "Location" caption with its value in a list, table or line of text (also "Lieu de travail"), elements whose class or test id says location, the line under the title, the page title, and Workday's address. Every reading is tried and the first one that names a place the rules above can classify wins, so a stray match no longer hides the right one. Places written without commas ("Montreal QC", "Toronto and Vancouver") are understood. An application form rarely repeats the location, so the card takes it from the posting page if you opened the panel there first.
 - Before appending, column H is checked for the same posting (tracking params and `/apply` ignored) and you get a duplicate warning with **Log anyway**.
 - A value starting with `=`, `+`, `-` or `@` (an odd company name) is written with a leading apostrophe so Sheets stores it as text, not a formula.
 - Every confirmed row is also kept locally. If the write fails (offline, expired token) it is queued and retried on browser start and every 5 minutes; pending rows show in the popup and under **Options → Applications**, with Retry / Discard. If a retry finds the URL already in the sheet (e.g. a write that succeeded but whose response was lost) it asks instead of double-writing.
-- The card has **Also save the posting** ticked by default. On a form-only page it is disabled with a hint.
+- The card has **Also save the posting** ticked by default. The row is written first and the posting is saved afterwards, so a slow or failed save never hides whether the log went through. Any failure is shown in the card.
 
 ### Save posting
 
@@ -106,7 +107,9 @@ Downloads/AutoFill/{Company}/{YYYY-MM-DD} {Title}/
                     (autofill / ai / existing / manual)
 ```
 
-If you are on the application form and the description lives on a different page (Lever `/apply`, Ashby `/application`, Workday apply steps), it tells you to save from the posting page instead.
+**Answers.** `answers.json` is read from the form at the moment you save, from every frame, whether or not you pressed Fill. Each fill also records what that step of the form held, and a later save adds to it, so a multi-step application ends up with the answers from all its steps.
+
+**Saving from the application form** (Lever `/apply`, Ashby `/application`, Workday apply steps, in-house forms) works: the answers are always saved. The description comes from the posting page if you opened the panel there before moving on to the form in the same tab (or the tab it opened); otherwise `posting.md` says it has none and a note tells you to save again from the posting page. `posting.mhtml` is then a snapshot of the form.
 
 **About the folder.** `chrome.downloads` can only write inside Chrome's Downloads folder, so it cannot target `C:\path\to\AutoFill` directly. To have files land there, make `Downloads\AutoFill` a directory junction (one-time, in `cmd`):
 

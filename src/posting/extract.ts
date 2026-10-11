@@ -2,6 +2,7 @@ import { Readability } from '@mozilla/readability';
 import TurndownService from 'turndown';
 import { deriveCompany } from '../tracking/company';
 import { canonicalPostingUrl } from './canonicalUrl';
+import { findLocation, locationFromLd } from './location';
 import { SELECTORS, isFormOnlyUrl, platformFor, type Platform } from './selectors';
 
 export interface ExtractedPosting {
@@ -60,40 +61,30 @@ interface JobLd {
   title?: string;
   description?: string;
   jobLocation?: unknown;
+  jobLocationType?: unknown;
+  applicantLocationRequirements?: unknown;
   baseSalary?: any;
 }
 
-function readJobPostingLd(doc: Document): JobLd | null {
+const isJobPosting = (node: any) => (Array.isArray(node?.['@type']) ? node['@type'].includes('JobPosting') : node?.['@type'] === 'JobPosting');
+
+/** Every JobPosting in the page's JSON-LD, wherever it is nested (arrays, @graph), skipping malformed blocks. */
+function readJobPostings(doc: Document): JobLd[] {
+  const found: JobLd[] = [];
+  const visit = (node: any, depth: number): void => {
+    if (!node || typeof node !== 'object' || depth > 4) return;
+    if (Array.isArray(node)) return node.forEach((n) => visit(n, depth + 1));
+    if (isJobPosting(node)) found.push(node as JobLd);
+    if (node['@graph']) visit(node['@graph'], depth + 1);
+  };
   for (const s of Array.from(doc.querySelectorAll('script[type="application/ld+json"]'))) {
     try {
-      const data = JSON.parse(s.textContent ?? '');
-      const items: any[] = Array.isArray(data) ? data : data['@graph'] ?? [data];
-      const hit = items.find((i) => (Array.isArray(i['@type']) ? i['@type'].includes('JobPosting') : i['@type'] === 'JobPosting'));
-      if (hit) return hit as JobLd;
+      visit(JSON.parse(s.textContent ?? ''), 0);
     } catch {
       /* ignore malformed JSON-LD */
     }
   }
-  return null;
-}
-
-/** schema.org uses ISO country codes ("CA"); spell out the common ones so they read as countries, not states. */
-const ISO_COUNTRIES: Record<string, string> = {
-  CA: 'Canada', US: 'United States', GB: 'United Kingdom', UK: 'United Kingdom', IE: 'Ireland', DE: 'Germany',
-  FR: 'France', IN: 'India', AU: 'Australia', NL: 'Netherlands', ES: 'Spain', SG: 'Singapore', JP: 'Japan',
-};
-
-function locationFromLd(loc: unknown): string {
-  const list = Array.isArray(loc) ? loc : loc ? [loc] : [];
-  return list
-    .map((l: any) => {
-      const a = l?.address ?? l;
-      const raw = typeof a?.addressCountry === 'string' ? a.addressCountry : a?.addressCountry?.name;
-      const country = typeof raw === 'string' ? (ISO_COUNTRIES[raw.trim().toUpperCase()] ?? raw) : raw;
-      return [a?.addressLocality, a?.addressRegion, country].filter(Boolean).join(', ');
-    })
-    .filter(Boolean)
-    .join(' | ');
+  return found;
 }
 
 function salaryFromLd(s: any): string {
@@ -148,7 +139,8 @@ function readabilityMarkdown(doc: Document): { md: string; title: string } {
 export function extractPosting(doc: Document, url: URL): ExtractedPosting {
   const platform = platformFor(url, doc);
   const sel = SELECTORS[platform];
-  const ld = readJobPostingLd(doc);
+  const postings = readJobPostings(doc);
+  const ld = postings[0] ?? null;
 
   let descriptionMd = pickDescription(doc, sel.description);
   let source: ExtractedPosting['source'] = descriptionMd ? 'selectors' : 'none';
@@ -177,7 +169,7 @@ export function extractPosting(doc: Document, url: URL): ExtractedPosting {
 
   const title =
     firstText(doc, sel.title) || ld?.title?.trim() || metaContent(doc, 'meta[property="og:title"]') || readabilityTitle || doc.title.trim();
-  const location = firstText(doc, sel.location) || locationFromLd(ld?.jobLocation);
+  const location = findLocation(doc, url, sel.location, postings.map(locationFromLd));
   const salary = firstText(doc, sel.salary) || salaryFromLd(ld?.baseSalary) || findSalary(descriptionMd);
 
   const formOnly =

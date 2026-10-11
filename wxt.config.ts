@@ -33,6 +33,7 @@ export default defineConfig({
       'pageCapture',
       'alarms',
       'offscreen',
+      'contextMenus',
     ],
     // Every site: application forms are often embedded in an iframe from another domain (an ATS the
     // company's careers page loads), and a frame can only be filled with access to its origin. This

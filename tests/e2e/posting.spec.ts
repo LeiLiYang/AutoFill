@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { launchExtension, savePosting, seed, startServers, triggerFill, type Ext, type Servers } from './harness';
+import { launchExtension, openLogPanel, savePosting, seed, startServers, triggerFill, type Ext, type Servers } from './harness';
 
 let servers: Servers;
 let ext: Ext;
@@ -62,13 +62,68 @@ test('saves posting.mhtml, posting.md and answers.json for a filled application'
   await page.close();
 });
 
-test('refuses to save from an application-form-only page and says where to go', async () => {
+const readJson = (result: any, name: string) => JSON.parse(readFileSync(result.files.find((f: { name: string }) => f.name === name).path, 'utf8'));
+const readText = (result: any, name: string) => readFileSync(result.files.find((f: { name: string }) => f.name === name).path, 'utf8');
+
+test('saving from the application form records the answers, and says the description is missing', async () => {
   const page = await ext.context.newPage();
   await page.goto(`${servers.main.origin}/acme/abc/apply`);
+  await triggerFill(ext, page);
+  await expect.poll(() => page.locator('input[name="email"]').inputValue()).toBe('ada@example.com');
+
   const result = await savePosting(ext, page);
-  expect(result.ok).toBe(false);
-  expect(result.code).toBe('form-only');
-  expect(result.message).toContain('Open the job posting page');
+  expect(result.ok).toBe(true);
+  expect(result.warnings.join(' ')).toContain('This is the application form');
+  const answers = readJson(result, 'answers.json').answers as { question: string; answer: string; source: string }[];
+  expect(answers.length).toBeGreaterThan(3); // not an empty file
+  expect(answers.find((a) => a.question.startsWith('Email'))).toMatchObject({ answer: 'ada@example.com', source: 'autofill' });
+  expect(readText(result, 'posting.md')).toContain('No job description could be extracted');
+  await page.close();
+});
+
+test('answers typed without ever pressing Fill are still recorded', async () => {
+  const page = await ext.context.newPage();
+  await page.goto(`${servers.main.origin}/generic/basic.html`);
+  await page.locator('#a').fill('Typed by hand');
+  const result = await savePosting(ext, page);
+  expect(result.ok).toBe(true);
+  expect(readJson(result, 'answers.json').answers).toContainEqual({ question: 'Given name', answer: 'Typed by hand', source: 'manual' });
+  await page.close();
+});
+
+test('a form reached from its posting page inherits the description and the location', async () => {
+  const page = await ext.context.newPage();
+  // Read the posting first (opening the log card is enough), then move on to the form in the same tab.
+  await page.goto(`${servers.main.origin}/generic/posting.html`);
+  await openLogPanel(ext, page);
+  await expect(page.locator('#autofill-review-host .logcard')).toBeVisible();
+  await page.goto(`${servers.main.origin}/acme/abc/apply`);
+  await triggerFill(ext, page);
+  await expect.poll(() => page.locator('input[name="email"]').inputValue()).toBe('ada@example.com');
+
+  const result = await savePosting(ext, page);
+  expect(result.ok).toBe(true);
+  expect(result.warnings.join(' ')).toContain('read earlier on the posting page');
+  const md = readText(result, 'posting.md');
+  expect(md).toContain('Globex builds the infrastructure');
+  expect(md).toContain('- **Location:** Toronto, ON');
+  expect(readJson(result, 'answers.json').answers.length).toBeGreaterThan(3);
+  await page.close();
+});
+
+test('answers from an earlier step of the same application are kept when a later step is saved', async () => {
+  const page = await ext.context.newPage();
+  await page.goto(`${servers.main.origin}/generic/basic.html`);
+  await triggerFill(ext, page);
+  await expect.poll(() => page.locator('#a').inputValue()).toBe('Ada');
+  // The "next step": the first fields are gone from the page, a new question appears.
+  await page.evaluate(() => {
+    document.getElementById('f')!.innerHTML = '<label for="z">Earliest start date</label><input id="z" value="January">';
+  });
+  const result = await savePosting(ext, page);
+  const answers = readJson(result, 'answers.json').answers as { question: string; answer: string }[];
+  expect(answers).toContainEqual(expect.objectContaining({ question: 'Given name', answer: 'Ada' })); // from step one
+  expect(answers).toContainEqual(expect.objectContaining({ question: 'Earliest start date', answer: 'January' }));
   await page.close();
 });
 

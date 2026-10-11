@@ -27,8 +27,6 @@ export type TestLlmResult = { ok: true; models: string[]; label: string } | { ok
 
 export interface LogApplicationResponse {
   log: LogResult;
-  /** Present when "also save posting" was ticked and the log succeeded. */
-  save?: SavePostingResult;
 }
 
 export interface CapturedAnswer {
@@ -68,11 +66,13 @@ export type ToBackground =
   /** From the panel (sender.tab) or the popup (tabId). */
   | { type: 'save-posting'; tabId?: number }
   /** Sent only after the user confirms the log card. Nothing is ever logged automatically. */
-  | { type: 'log-application'; entry: LogEntry; force?: boolean; alsoSavePosting?: boolean; tabId?: number }
+  | { type: 'log-application'; entry: LogEntry; force?: boolean }
   /** Draft one free-text answer with the LLM (the only call that sends profile/posting text off-device). */
   | { type: 'generate-answer'; question: string; maxLength?: number; /** Ignore a stored draft and write a new one. */ fresh?: boolean }
   /** Ask the LLM what unrecognised fields are (labels and options only; answers are remembered per site). */
   | { type: 'classify-fields'; host: string; fields: FieldToClassify[] }
+  /** What was read earlier on the posting page of the application this tab is on (location, title). */
+  | { type: 'earlier-posting'; canonicalUrl: string; company: string }
   /** Remember this page's job description so a later form page (e.g. Workday /apply) can use it. */
   | { type: 'cache-posting'; posting: ExtractedPosting }
   /** Settings page: sign in and read the sheet, to check the Sheet ID, tab name and OAuth setup. */

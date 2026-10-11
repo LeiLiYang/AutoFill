@@ -27,16 +27,41 @@ interface Entry {
 
 const WORK_MODE = /\b(remote|hybrid|on site|onsite|in office|flexible|work from home|wfh|anywhere|multiple locations?|various locations?|locations?)\b/g;
 const DECORATION = /\b(greater|metropolitan area|metro area|metro|area|region|gta)\b/g;
-const PROVINCE_NAMES = new Set(Object.values(CANADIAN_PROVINCES));
+// "newfoundland" alone: the full name is shortened before splitting on "and" (see segments).
+const PROVINCE_NAMES = new Set([...Object.values(CANADIAN_PROVINCES), 'newfoundland']);
 const STATE_NAMES = new Set(Object.values(US_STATES));
 const PROVINCE_CODES = new Set(Object.keys(CANADIAN_PROVINCES));
 const STATE_CODES = new Set(Object.keys(US_STATES));
 const LISTED_CANADIAN = new Set(['montreal', 'toronto', 'vancouver']);
+/** Cities we can place without a region, so a bare code after one ("Montreal QC") can be trusted. */
+const isKnownCity = (name: string) => LISTED_CANADIAN.has(name) || CANADIAN_CITIES.has(name) || US_CITIES.has(name) || name in OTHER_CITIES;
+const isRegionName = (name: string) => name in COUNTRY_WORDS || PROVINCE_NAMES.has(name) || STATE_NAMES.has(name);
+
+/**
+ * "Montreal QC", "Toronto Ontario Canada": a place written without commas. Peel region and country
+ * words off the end so the rest reads as the city. A two-letter code or a short country name is
+ * only peeled after a city we know, since on its own it is as likely to be a word ("in", "or", "us").
+ */
+function splitUnpunctuated(token: string): string[] {
+  if (isRegionName(token) || isKnownCity(token)) return [token];
+  const words = token.split(' ');
+  for (let n = Math.min(4, words.length - 1); n >= 1; n--) {
+    const head = words.slice(0, -n).join(' ');
+    const tail = words.slice(-n).join(' ');
+    const isCode = n === 1 && (PROVINCE_CODES.has(tail) || STATE_CODES.has(tail));
+    // Short names ("us", "uk", "gb") are ordinary words too ("join us"): like codes, only after a known city.
+    const spelledOut = isRegionName(tail) && tail.length > 3;
+    if (spelledOut || ((isCode || isRegionName(tail)) && isKnownCity(splitUnpunctuated(head)[0]!))) return [...splitUnpunctuated(head), tail];
+  }
+  return [token];
+}
 
 /** Split a raw location into candidate places: strong separators first, then city/region comma groups. */
 function segments(raw: string): string[] {
   return raw
-    .split(/[;|\n•·]| \/ | or /i)
+    // "Newfoundland and Labrador" is one province, not two places.
+    .replace(/newfoundland\s*(?:and|&)\s*labrador/gi, 'Newfoundland')
+    .split(/[;|\n•·&+]| \/ | or | and /i)
     .map((s) => s.replace(/\s+-\s+/g, ', '))
     .map((s) => normalizeSegment(s))
     .filter(Boolean);
@@ -46,8 +71,19 @@ function normalizeSegment(s: string): string {
   // Keep commas as token separators; normalise everything else.
   return s
     .split(',')
-    .map((t) => normalize(t).replace(/\bbay area\b/, 'sf bay').replace(WORK_MODE, ' ').replace(DECORATION, ' ').replace(/\s+/g, ' ').trim())
+    .map((t) =>
+      normalize(t)
+        // A caption glued to its value by a careless text read: "locationsVancouver".
+        .replace(/^locations?(?=[a-z])/, '')
+        .replace(/\bbay area\b/, 'sf bay')
+        .replace(WORK_MODE, ' ')
+        .replace(DECORATION, ' ')
+        .replace(/\b(based|located|office|offices|canada wide|in|the)\b/g, (w) => (w === 'canada wide' ? 'canada' : ' '))
+        .replace(/\s+/g, ' ')
+        .trim(),
+    )
     .filter(Boolean)
+    .flatMap(splitUnpunctuated)
     .join(',');
 }
 

@@ -8,7 +8,9 @@ export type LogResult =
   | { ok: false; code: 'invalid'; message: string; errors: string[] }
   | { ok: false; code: 'not-configured'; message: string }
   | { ok: false; code: 'duplicate'; message: string; rows: number[] }
-  | { ok: false; code: 'auth' | 'config'; message: string };
+  | { ok: false; code: 'auth' | 'config'; message: string }
+  /** Something unexpected broke before the row could be stored: shown as it is, never swallowed. */
+  | { ok: false; code: 'error'; message: string };
 
 export interface LoggerDeps {
   sheets: SheetsDeps;

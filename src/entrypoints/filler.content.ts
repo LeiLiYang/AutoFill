@@ -18,7 +18,7 @@ import type {
   ToContent,
 } from '../messaging/protocol';
 import { extractPosting } from '../posting/extract';
-import { buildLogPrefill, detectChannel, type LogPrefill } from '../tracking/prefill';
+import { buildLogPrefill, detectChannel, withEarlierPosting, type LogPrefill } from '../tracking/prefill';
 import type { FileKind, Profile } from '../profile/schema';
 import { loadProfile, loadSettings } from '../profile/store';
 import { base64ToBytes } from '../util/base64';
@@ -74,16 +74,37 @@ export default defineContentScript({
           (await send<SaveAnswersResult | undefined>({ type: 'save-answers' })) ?? { saved: 0, found: 0, scanned: 0, unreachable: 1 },
         onSavePosting: () => send<SavePostingResult>({ type: 'save-posting' }),
         // Reached only from the user's click on the log card's confirm button.
-        onLog: (entry: Parameters<NonNullable<PanelProps['onLog']>>[0], force: boolean, alsoSavePosting: boolean) =>
-          send<LogApplicationResponse>({ type: 'log-application', entry, force, alsoSavePosting }),
+        onLog: (entry: Parameters<NonNullable<PanelProps['onLog']>>[0], force: boolean) =>
+          send<LogApplicationResponse | undefined>({ type: 'log-application', entry, force }),
         onClose: () => {
           panel?.unmount();
           panel = null;
+          clearInterval(urlWatch);
+          urlWatch = undefined;
           clearHighlights();
         },
       };
       if (panel) panel.update(props);
       else panel = mountPanel(document, props);
+      watchUrl();
+    }
+
+    /**
+     * Single-page job boards (Workday, LinkedIn) move to another posting without loading a new
+     * page. While the panel is open, notice the address changing and re-read the page, so the log
+     * card describes the posting now on screen and not the one it was opened on.
+     */
+    let urlWatch: ReturnType<typeof setInterval> | undefined;
+    let watchedUrl = location.href;
+    function watchUrl() {
+      if (urlWatch || !isTop) return;
+      watchedUrl = location.href;
+      urlWatch = setInterval(() => {
+        if (location.href === watchedUrl || !panel) return;
+        watchedUrl = location.href;
+        prefill = computePrefill();
+        renderPanel();
+      }, 1000);
     }
 
     /** The fields on the page right now (a wizard may have moved on since the last fill). */
@@ -99,7 +120,18 @@ export default defineContentScript({
         const posting = extractPosting(document, url);
         // Keep the description for the LLM: the application form page often has none of its own.
         if (!posting.formOnly && posting.descriptionMd.length >= 200) void send({ type: 'cache-posting', posting });
-        return buildLogPrefill(posting, detectChannel(url, document));
+        const built = buildLogPrefill(posting, detectChannel(url, document));
+        // An application form rarely states the location: take it from the posting page read earlier.
+        if (posting.formOnly || !built.location) {
+          void send<{ title?: string; location?: string } | null>({ type: 'earlier-posting', canonicalUrl: posting.canonicalUrl, company: posting.company })
+            .then((earlier) => {
+              if (!earlier || prefill !== built) return;
+              prefill = withEarlierPosting(built, earlier);
+              renderPanel();
+            })
+            .catch(() => undefined);
+        }
+        return built;
       } catch {
         return null; // the card then simply does not appear; filling is unaffected
       }

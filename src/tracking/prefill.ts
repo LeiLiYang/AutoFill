@@ -31,6 +31,21 @@ export interface LogPrefill {
   formOnly: boolean;
 }
 
+/**
+ * Fill the gaps of a form page's prefill from the posting read earlier: the form rarely repeats the
+ * location, and its title is often just "Apply". What the page itself stated is never overridden.
+ */
+export function withEarlierPosting(prefill: LogPrefill, earlier: { title?: string; location?: string } | null): LogPrefill {
+  if (!earlier) return prefill;
+  const location = prefill.location || (classifyLocation(earlier.location) ?? '');
+  return {
+    ...prefill,
+    location,
+    locationText: prefill.location ? prefill.locationText : earlier.location || prefill.locationText,
+    category: prefill.formOnly && earlier.title ? classifyCategory(earlier.title) : prefill.category,
+  };
+}
+
 export function buildLogPrefill(p: ExtractedPosting, channel: Channel, now: Date = new Date()): LogPrefill {
   return {
     company: p.company,
