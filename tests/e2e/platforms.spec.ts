@@ -46,7 +46,8 @@ test('ashby: authorized = Yes and sponsorship = No even when the markup has no r
   await expect(page.locator('#auth button').first()).toHaveClass(/_k8x2/); // Yes was clicked and the page reacted
   // Sponsorship: No was clicked, but this page shows no visible change, so it is flagged for a look, not failed.
   await expect(panel).toContainText('Will you now or in the future require sponsorship');
-  await expect(panel).toContainText('clicked “No” but the page showed no change'); // says why, not just "check this"
+  await expect(panel).toContainText('Clicked “No”, not confirmed'); // says why, not just "check this"
+  await expect(panel.locator('button.row', { hasText: 'require sponsorship' })).toHaveAttribute('title', /clicked “No” but the page showed no change/);
   expect(await submitEvents(page)).toEqual({ submit: 0, submitClick: 0 });
   await page.close();
 });

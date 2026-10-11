@@ -250,3 +250,10 @@ export async function submitEvents(page: Page): Promise<{ submit: number; submit
   }
   return total;
 }
+
+/** The log card opens as a one-line summary when the page gave it everything: show its fields. */
+export async function showDetails(card: import('@playwright/test').Locator): Promise<void> {
+  await card.waitFor();
+  const edit = card.getByRole('button', { name: 'Edit', exact: true });
+  if (await edit.count()) await edit.click();
+}

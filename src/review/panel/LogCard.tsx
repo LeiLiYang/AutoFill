@@ -41,6 +41,8 @@ export function LogCard({ prefill, onLog, onSavePosting }: LogCardProps) {
   /** A failure with no log result at all: the request threw or nothing answered. */
   const [failure, setFailure] = useState<string | null>(null);
   const [save, setSave] = useState<SavePostingResult | 'saving' | null>(null);
+  /** Collapsed to one line when the page gave us everything; open when something needs the user. */
+  const [open, setOpen] = useState(() => !validateEntry({ ...prefill }).ok);
 
   const set = (k: keyof Draft) => (v: string) => {
     setDraft((d) => ({ ...d, [k]: v }));
@@ -83,48 +85,61 @@ export function LogCard({ prefill, onLog, onSavePosting }: LogCardProps) {
 
   return (
     <section className="logcard" aria-label="Log application">
-      <h3>Log application</h3>
-
-      <label>
-        Company
-        <input value={draft.company} onChange={(e) => set('company')(e.target.value)} />
-      </label>
-      <div className="two">
-        <label>
-          Category
-          <select value={draft.category} onChange={(e) => set('category')(e.target.value)}>
-            {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
-          </select>
-        </label>
-        <label>
-          Channel
-          <select value={draft.channel} onChange={(e) => set('channel')(e.target.value)}>
-            {CHANNELS.map((c) => <option key={c}>{c}</option>)}
-          </select>
-        </label>
+      <div className="loghead">
+        <h3>Log application</h3>
+        <button className="link" onClick={() => setOpen(!open)} aria-expanded={open}>{open ? 'Hide details' : 'Edit'}</button>
       </div>
-      <label>
-        Location
-        <select value={draft.location} onChange={(e) => set('location')(e.target.value)} aria-invalid={!draft.location}>
-          <option value="">Select a location…</option>
-          {LOCATIONS.map((l) => <option key={l}>{l}</option>)}
-        </select>
-      </label>
-      {!draft.location && (
-        <p className="note err">
-          {prefill.locationText
-            ? `Could not place “${prefill.locationText}” automatically. Pick one to log.`
-            : 'No location found on this page. Pick one to log.'}
+
+      {!open && (
+        <p className="logsummary">
+          {draft.company} <span>· {draft.category} · {draft.location} · {draft.channel} · {draft.date}</span>
         </p>
       )}
-      <label>
-        Date
-        <input value={draft.date} onChange={(e) => set('date')(e.target.value)} placeholder="YYYY/MM/DD" />
-      </label>
-      <label>
-        Job URL
-        <input value={draft.url} onChange={(e) => set('url')(e.target.value)} />
-      </label>
+
+      {open && (
+        <div className="logfields">
+          <label>
+            Company
+            <input value={draft.company} onChange={(e) => set('company')(e.target.value)} />
+          </label>
+          <div className="two">
+            <label>
+              Category
+              <select value={draft.category} onChange={(e) => set('category')(e.target.value)}>
+                {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
+              </select>
+            </label>
+            <label>
+              Channel
+              <select value={draft.channel} onChange={(e) => set('channel')(e.target.value)}>
+                {CHANNELS.map((c) => <option key={c}>{c}</option>)}
+              </select>
+            </label>
+          </div>
+          <label>
+            Location
+            <select value={draft.location} onChange={(e) => set('location')(e.target.value)} aria-invalid={!draft.location}>
+              <option value="">Select a location…</option>
+              {LOCATIONS.map((l) => <option key={l}>{l}</option>)}
+            </select>
+          </label>
+          {!draft.location && (
+            <p className="note err">
+              {prefill.locationText
+                ? `Could not place “${prefill.locationText}” automatically. Pick one to log.`
+                : 'No location found on this page. Pick one to log.'}
+            </p>
+          )}
+          <label>
+            Date
+            <input value={draft.date} onChange={(e) => set('date')(e.target.value)} placeholder="YYYY/MM/DD" />
+          </label>
+          <label>
+            Job URL
+            <input value={draft.url} onChange={(e) => set('url')(e.target.value)} />
+          </label>
+        </div>
+      )}
 
       {onSavePosting && (
         <label className="check">

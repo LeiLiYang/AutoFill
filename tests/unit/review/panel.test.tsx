@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { describe, expect, it, vi } from 'vitest';
 import type { FieldReport } from '../../../src/adapters/types';
 import { clearHighlights, highlight, levelFor } from '../../../src/review/highlight';
-import { Panel, describeSave } from '../../../src/review/panel/Panel';
+import { Panel, describeSave, reasonFor } from '../../../src/review/panel/Panel';
 import { mount } from '../helpers';
 
 const rep = (over: Partial<FieldReport>): FieldReport => ({
@@ -127,5 +127,46 @@ describe('describeSave: always says what happened', () => {
     expect(msg).toContain('looked at 1 field)');
     expect(msg).toMatch(/Type your own answers/);
     expect(msg).toMatch(/profile fields are not saved/);
+  });
+});
+
+describe('reasonFor: short enough to read at a glance, with the full text kept for the tooltip', () => {
+  it.each([
+    [rep({ status: 'filled' }), 'Filled', undefined],
+    [rep({ status: 'no-data', detail: 'no profile data for gpa' }), 'Nothing in your profile for this', undefined],
+    [rep({ status: 'ai', detail: 'AI draft from your profile and posting: review before submitting' }), 'AI draft. Review it before submitting', 'AI draft from your profile and posting: review before submitting'],
+    [rep({ status: 'low-confidence', detail: 'matched by AI: check it' }), 'Field matched by AI. Check it', 'matched by AI: check it'],
+    [rep({ status: 'unmatched', detail: 'free-text question: no saved answer matches. No Anthropic API key is set.' }), 'No saved answer. No Anthropic API key is set.', expect.any(String)],
+    [rep({ status: 'unmatched', detail: 'free-text question: Rate limited by OpenAI. Wait a moment and fill again.' }), 'Rate limited by OpenAI. Wait a moment and fill again.', expect.any(String)],
+    [rep({ status: 'failed', detail: 'no matching option for “QC”. Offered: Quebec, Ontario, Alberta, Manitoba' }), 'No option matches “QC”', 'no matching option for “QC”. Offered: Quebec, Ontario, Alberta, Manitoba'],
+    [rep({ status: 'low-confidence', detail: 'attached cv.pdf but the page does not show it yet: check the upload' }), 'cv.pdf: upload not confirmed. Check it', expect.any(String)],
+    [rep({ status: 'failed', detail: 'something nobody anticipated' }), 'something nobody anticipated', undefined],
+  ])('%#', (report, short, full) => {
+    expect(reasonFor(report)).toEqual(full === undefined ? { short } : { short, full });
+  });
+});
+
+describe('Panel layout', () => {
+  it('puts the reason under the field name, and keeps the long explanation in the tooltip', () => {
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const long = 'no matching option for “QC”. Offered: Quebec, Ontario, Alberta, Manitoba, Saskatchewan, British Columbia';
+    flushSync(() =>
+      createRoot(host).render(
+        <Panel
+          filling={false}
+          onScroll={() => {}}
+          onSaveAnswers={vi.fn()}
+          onSavePosting={vi.fn()}
+          onClose={() => {}}
+          frames={[{ frameId: 0, frameUrl: 'https://x', isTop: true, adapter: 'generic', reports: [rep({ id: 'a', label: 'Province', status: 'failed', detail: long }), rep({ id: 'b', label: 'Shoe size', status: 'unmatched' })] }]}
+        />,
+      ),
+    );
+    const row = host.querySelector('button.row')!;
+    expect(row.querySelector('.text .label')!.textContent).toBe('Province');
+    expect(row.querySelector('.text .why')!.textContent).toBe('No option matches “QC”');
+    expect(row.getAttribute('title')).toBe(long);
+    expect(host.querySelector('.counts')!.textContent).toBe('0 filled1 review0 required empty1 not filled');
   });
 });

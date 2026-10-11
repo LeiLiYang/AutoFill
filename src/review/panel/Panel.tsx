@@ -31,29 +31,56 @@ interface Row {
 }
 
 const STATUS_TEXT: Record<string, string> = {
-  filled: 'filled',
-  'low-confidence': 'check this match',
-  ai: 'AI draft: review',
-  'skipped-existing': 'already filled',
-  'no-data': 'nothing in profile',
-  unmatched: 'not recognised',
-  failed: 'could not fill',
+  filled: 'Filled',
+  'low-confidence': 'Check this match',
+  ai: 'AI draft. Review it',
+  'skipped-existing': 'Already filled',
+  'no-data': 'Nothing in your profile for this',
+  unmatched: 'Not recognised',
+  failed: 'Could not fill',
 };
+
+/** Long explanations from the fill code, cut down to what fits one or two lines. The full text stays in the tooltip. */
+const SHORTER: [RegExp, (m: RegExpExecArray) => string][] = [
+  [/^AI draft\b/i, () => 'AI draft. Review it before submitting'],
+  [/^matched by AI/i, () => 'Field matched by AI. Check it'],
+  [/^from your answer bank/i, () => 'From your answer bank. Check it fits'],
+  [/^free-text question \(no question text found\)/i, () => 'Open question with no readable label'],
+  [/^free-text question: no saved answer matches\.?\s*(.*)$/i, (m) => `No saved answer. ${m[1]}`.trim()],
+  [/^free-text question: (.+)$/is, (m) => m[1]!],
+  [/^free-text question$/i, () => 'Open question: no saved answer'],
+  [/^no matching option for “([^”]*)”\.\s*The dropdown showed no options/i, (m) => `The dropdown showed no options for “${m[1]}”`],
+  [/^no matching option for “([^”]*)”/i, (m) => `No option matches “${m[1]}”`],
+  [/^no matching option/i, () => 'No option matches your answer'],
+  [/^attached (.+) but the page does not show it yet/i, (m) => `${m[1]}: upload not confirmed. Check it`],
+  [/^clicked “([^”]*)” but the page showed no change/i, (m) => `Clicked “${m[1]}”, not confirmed. Check it`],
+  [/^weak match for/i, () => 'Not sure what this field asks for'],
+  [/^input rejected the value/i, () => 'The field did not keep the value'],
+  [/^no (resume|coverLetter) stored/i, (m) => `No ${m[1] === 'resume' ? 'resume' : 'cover letter'} in your files`],
+];
 
 /**
  * Why a row needs attention. A specific reason (what a dropdown offered, that a click could not be
  * confirmed, why an AI answer was not given) beats a generic status; routine outcomes stay short.
  */
-function reasonFor(r: FieldReport): string {
-  const specific = ['unmatched', 'low-confidence', 'failed', 'ai'].includes(r.status) && r.detail;
-  return specific ? r.detail! : (STATUS_TEXT[r.status] ?? r.status);
+export function reasonFor(r: FieldReport): { short: string; full?: string } {
+  const specific = ['unmatched', 'low-confidence', 'failed', 'ai'].includes(r.status) ? r.detail?.trim() : '';
+  if (!specific) return { short: STATUS_TEXT[r.status] ?? r.status };
+  for (const [pattern, shorten] of SHORTER) {
+    const m = pattern.exec(specific);
+    if (m) {
+      const short = shorten(m);
+      return short === specific ? { short } : { short, full: specific };
+    }
+  }
+  return { short: specific };
 }
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 /** Typing in the panel must not trigger the host page's keyboard shortcuts. */
 const stop = (e: { stopPropagation(): void }) => e.stopPropagation();
 const KEEP_KEYS_IN_PANEL = { onKeyDown: stop, onKeyUp: stop, onKeyPress: stop };
-
-const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 /** Say what happened when "Save my answers" runs, including why nothing was saved. */
 export function describeSave(r: SaveAnswersResult): string {
@@ -76,7 +103,11 @@ export function Panel({ frames, filling, notice, logOnly, logOnlyNote, prefill, 
 
   const savePosting = async () => {
     setPosting('saving');
-    setPosting(await onSavePosting());
+    try {
+      setPosting((await onSavePosting()) ?? { ok: false, code: 'error', message: 'The extension did not respond. Reload this page and try again.' });
+    } catch (e) {
+      setPosting({ ok: false, code: 'error', message: `Could not save the posting: ${(e as Error).message}` });
+    }
   };
 
   const rows: Row[] = frames.flatMap((f) =>
@@ -90,7 +121,6 @@ export function Panel({ frames, filling, notice, logOnly, logOnlyNote, prefill, 
   // When nothing was filled, the reasons are the whole story: show them without a click.
   const nothingFilled = !filling && green.length + yellow.length + kept === 0;
   const showOther = otherToggled ?? nothingFilled;
-  const setShowOther = setOtherToggled;
 
   const saveNote = useRef<HTMLParagraphElement>(null);
   const [savingAnswers, setSavingAnswers] = useState(false);
@@ -116,14 +146,20 @@ export function Panel({ frames, filling, notice, logOnly, logOnlyNote, prefill, 
   }, [saved]);
 
   const list = (items: Row[], cls: string) =>
-    items.map(({ frameId, report }) => (
-      <li key={`${frameId}:${report.id}`}>
-        <button className={`row ${cls}`} onClick={() => onScroll(frameId, report.id)}>
-          <span className="label">{report.label}</span>
-          <span className="why">{reasonFor(report)}</span>
-        </button>
-      </li>
-    ));
+    items.map(({ frameId, report }) => {
+      const reason = reasonFor(report);
+      return (
+        <li key={`${frameId}:${report.id}`}>
+          <button className={`row ${cls}`} onClick={() => onScroll(frameId, report.id)} title={reason.full ?? 'Show this field'}>
+            <span className="dot" aria-hidden="true" />
+            <span className="text">
+              <span className="label">{report.label}</span>
+              <span className="why">{reason.short}</span>
+            </span>
+          </button>
+        </li>
+      );
+    });
 
   return (
     <aside className="panel" role="complementary" aria-label="Autofill review" {...KEEP_KEYS_IN_PANEL}>
@@ -132,15 +168,21 @@ export function Panel({ frames, filling, notice, logOnly, logOnlyNote, prefill, 
         <button className="close" onClick={onClose} aria-label="Close review panel">×</button>
       </header>
 
-      {filling && <p className="note">Filling…</p>}
+      {filling && (
+        <p className="progress" role="status">
+          <span className="bar" aria-hidden="true" />
+          Filling…
+        </p>
+      )}
 
       {logOnly ? (
         <p className="note">{logOnlyNote || 'Nothing is being filled. You can still log this posting and save it.'}</p>
       ) : (
-        <div className="counts">
-          <span className="chip g">{green.length} filled</span>
-          <span className="chip y">{yellow.length} review</span>
-          <span className="chip r">{red.length} required empty</span>
+        <div className="counts" aria-label="Summary">
+          <span className="count g"><i aria-hidden="true" />{green.length} filled</span>
+          <span className="count y"><i aria-hidden="true" />{yellow.length} review</span>
+          <span className="count r"><i aria-hidden="true" />{red.length} required empty</span>
+          {other.length > 0 && <span className="count n"><i aria-hidden="true" />{other.length} not filled</span>}
         </div>
       )}
 
@@ -171,7 +213,7 @@ export function Panel({ frames, filling, notice, logOnly, logOnlyNote, prefill, 
       {other.length > 0 && (
         <section>
           <h3>
-            <button className="link" onClick={() => setShowOther(!showOther)}>
+            <button className="link" onClick={() => setOtherToggled(!showOther)} aria-expanded={showOther}>
               {showOther ? '▾' : '▸'} Not filled ({other.length})
             </button>
           </h3>
@@ -183,17 +225,19 @@ export function Panel({ frames, filling, notice, logOnly, logOnlyNote, prefill, 
       {prefill && onLog && <LogCard key={`${prefill.url}|${prefill.location}|${prefill.category}`} prefill={prefill} onLog={onLog} onSavePosting={onSavePosting} />}
 
       <footer>
-        {!logOnly && (
-          <button className="action" onClick={save} disabled={savingAnswers}>
-            {savingAnswers ? 'Saving…' : 'Save my answers to answer bank'}
+        <div className="actions">
+          {!logOnly && (
+            <button className="action secondary" onClick={save} disabled={savingAnswers} title="Save the answers you typed yourself to your answer bank, to reuse next time">
+              {savingAnswers ? 'Saving…' : 'Save my answers'}
+            </button>
+          )}
+          <button className="action secondary" onClick={savePosting} disabled={posting === 'saving'} title="Save the posting, a snapshot of this page and the form's answers to your Downloads folder">
+            {posting === 'saving' ? 'Saving posting…' : 'Save posting'}
           </button>
-        )}
+        </div>
         {saved && <p className="note save-note" role="status" ref={saveNote}>{saved}</p>}
-        <button className="action secondary" onClick={savePosting} disabled={posting === 'saving'}>
-          {posting === 'saving' ? 'Saving posting…' : 'Save posting'}
-        </button>
         {posting && posting !== 'saving' && (
-          <div className={`note ${posting.ok ? '' : 'err'}`} role="status">
+          <div className={`note save-note ${posting.ok ? '' : 'err'}`} role="status">
             {posting.ok ? (
               <>
                 Saved to Downloads/{posting.folder}
@@ -205,7 +249,7 @@ export function Panel({ frames, filling, notice, logOnly, logOnlyNote, prefill, 
             )}
           </div>
         )}
-        <p className="note">Nothing is submitted. Review the form, then click Submit yourself.</p>
+        <p className="note fine">Nothing is submitted. Review the form, then click Submit yourself.</p>
       </footer>
     </aside>
   );

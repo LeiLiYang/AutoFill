@@ -164,7 +164,7 @@ The manifest grants host access to all sites (`<all_urls>`). That is what lets t
 
 ## What is and isn't verified
 
-**Verified by automated tests** (396 unit tests; 39 end-to-end tests that load the built extension in a real browser against local fixtures): matching rules, the fill mechanics (including React-style controlled inputs, selects, radios, custom dropdowns, file inputs), the never-submit and never-CAPTCHA guards, the log/duplicate/escape/queue logic against a fake Sheets server, every location rule, posting extraction and the real MHTML/Markdown/JSON files, the answer bank and LLM flow with a stubbed model, the pinned extension ID, and a production-bundle check that no test hooks ship.
+**Verified by automated tests** (575 unit tests; 48 end-to-end tests that load the built extension in a real browser against local fixtures): matching rules, the fill mechanics (including React-style controlled inputs, selects, radios, custom dropdowns, file inputs), the never-submit and never-CAPTCHA guards, the log/duplicate/escape/queue logic against a fake Sheets server, every location rule, posting extraction and the real MHTML/Markdown/JSON files, the answer bank and LLM flow with a stubbed model, the pinned extension ID, and a production-bundle check that no test hooks ship.
 
 **Not verified against the real services**, and worth a first run with a throwaway sheet and a real application you are not going to submit:
 

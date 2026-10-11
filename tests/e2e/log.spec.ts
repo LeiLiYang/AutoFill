@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
-import { fakeSheet, installSheetsStub, launchExtension, openLogPanel, resetSheet, seed, setOnline, startServers, submitEvents, triggerFill, type Ext, type Servers } from './harness';
+import { fakeSheet, installSheetsStub, launchExtension, openLogPanel, resetSheet, seed, setOnline, showDetails, startServers, submitEvents, triggerFill, type Ext, type Servers } from './harness';
 
 let servers: Servers;
 let ext: Ext;
@@ -27,6 +27,7 @@ async function openGreenhouse(): Promise<{ page: Page; card: ReturnType<Page['lo
   await page.goto(`${servers.main.origin}/greenhouse/classic.html`);
   await triggerFill(ext, page);
   const card = page.locator('#autofill-review-host .logcard');
+  await showDetails(card);
   await expect(card).toBeVisible();
   return { page, card };
 }
@@ -174,6 +175,7 @@ test('an unresolved location blocks logging until the user picks one', async () 
   await page.goto(`${servers.main.origin}/generic/basic.html`); // no location on the page
   await triggerFill(ext, page);
   const card = page.locator('#autofill-review-host .logcard');
+  await showDetails(card);
   await expect(card).toBeVisible();
   await expect(card.getByLabel('Location')).toHaveValue('');
   await expect(card).toContainText('Pick one to log');
@@ -193,6 +195,7 @@ test('log a posting you have not applied to: card opens with nothing filled, and
   const panel = page.locator('#autofill-review-host .panel');
   await expect(panel).toContainText("you don't need to have applied");
   const card = panel.locator('.logcard');
+  await showDetails(card);
   await expect(card.getByLabel('Company')).toHaveValue('Globex');
   await expect(card.getByLabel('Category')).toHaveValue('SWE');
   await expect(card.getByLabel('Location')).toHaveValue('toronto');
@@ -242,6 +245,8 @@ test('LinkedIn: logs and saves the posting but never fills', async () => {
   expect(await page.locator('#email').getAttribute('data-autofill-level')).toBeNull();
 
   const card = panel.locator('.logcard');
+
+  await showDetails(card);
   await expect(card.getByLabel('Company')).toHaveValue('Acme Corp');
   await expect(card.getByLabel('Channel')).toHaveValue('linkedin'); // Easy Apply
   await expect(card.getByLabel('Location')).toHaveValue('toronto');
@@ -275,6 +280,7 @@ test('logging from the application form inherits the location read on the postin
   await page.goto(`${servers.main.origin}/workday/apply.html`);
   await triggerFill(ext, page);
   const card = page.locator('#autofill-review-host .logcard');
+  await showDetails(card);
   await expect(card.getByLabel('Location')).toHaveValue('toronto');
   await expect(card.getByRole('button', { name: 'Log application' })).toBeEnabled();
   await page.close();

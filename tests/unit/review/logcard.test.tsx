@@ -105,7 +105,7 @@ describe('the card follows the posting on screen', () => {
         root.render(<Panel frames={[]} filling={false} logOnly prefill={p} onLog={onLog} onScroll={() => {}} onSaveAnswers={vi.fn()} onSavePosting={vi.fn()} onClose={() => {}} />),
       );
     const logButton = () => Array.from(host.querySelectorAll('.logcard button')).find((b) => /Log application|Logged/.test(b.textContent ?? '')) as HTMLButtonElement;
-    const company = () => (host.querySelector('.logcard input') as HTMLInputElement).value;
+    const summary = () => host.querySelector('.logsummary')!.textContent!;
 
     show(prefill());
     flushSync(() => logButton().dispatchEvent(new MouseEvent('click', { bubbles: true })));
@@ -114,7 +114,7 @@ describe('the card follows the posting on screen', () => {
     show(prefill({ company: 'Globex', url: 'https://careers.globex.com/jobs/9' }));
     expect(logButton().textContent).toBe('Log application');
     expect(logButton().disabled).toBe(false);
-    expect(company()).toBe('Globex');
+    expect(summary()).toContain('Globex');
   });
 });
 
@@ -149,5 +149,23 @@ describe('answers recorded per application', () => {
     // A reading of a page with no form does not wipe what is stored.
     expect(await rememberAnswers(kv, 'https://x/job/1', [])).toHaveLength(2);
     expect(await storedAnswers(kv, 'https://x/job/1')).toHaveLength(2);
+  });
+});
+
+describe('LogCard: one line when nothing needs the user', () => {
+  it('shows a summary with the confirm button, and opens the fields on Edit', () => {
+    const { host } = render();
+    expect(host.querySelector('.logsummary')!.textContent).toBe('Acme · SWE · montreal · website · 2026/10/11');
+    expect(host.querySelector('.logfields')).toBeNull();
+    const edit = Array.from(host.querySelectorAll('button')).find((b) => b.textContent === 'Edit')!;
+    flushSync(() => edit.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    expect(host.querySelectorAll('.logfields input, .logfields select').length).toBe(6);
+  });
+
+  it('opens by itself when something is missing', () => {
+    const { host, button } = render({ prefill: prefill({ location: '', locationText: '' }) });
+    expect(host.querySelector('.logfields')).not.toBeNull();
+    expect(host.textContent).toContain('No location found on this page. Pick one to log.');
+    expect(button().disabled).toBe(true);
   });
 });
