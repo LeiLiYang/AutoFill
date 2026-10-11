@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { companySlugFromUrl, deriveCompany, prettifySlug } from '../../../src/tracking/company';
+import { cleanCompany, companySlugFromUrl, deriveCompany, prettifySlug } from '../../../src/tracking/company';
 import { mount } from '../helpers';
 
 const u = (s: string) => new URL(s);
@@ -51,4 +51,32 @@ describe('deriveCompany', () => {
     mount('');
     expect(deriveCompany(u('https://careers.initech.com/jobs/1'), document)).toBe('Initech');
   });
+
+  it('drops legal suffixes and extra words after the company name', () => {
+    mount('<script type="application/ld+json">{"@type":"JobPosting","hiringOrganization":{"name":"Chewy, Inc."}}</script>');
+    expect(deriveCompany(u('https://boards.greenhouse.io/chewy/jobs/1'), document)).toBe('Chewy');
+    mount('<script type="application/ld+json">{"@type":"JobPosting","hiringOrganization":{"name":"TikTok Live"}}</script>');
+    expect(deriveCompany(u('https://jobs.lever.co/tiktok/abc'), document)).toBe('TikTok');
+    mount('<script type="application/ld+json">{"@type":"JobPosting","hiringOrganization":{"name":"Chewy Inc"}}</script>');
+    expect(deriveCompany(u('https://careers.chewy.example/jobs/1'), document)).toBe('Chewy');
+  });
+
+  it('takes the company, not the job title, from a LinkedIn page title', () => {
+    mount('');
+    document.title = 'Software Engineer, TikTok Live | TikTok | LinkedIn';
+    expect(deriveCompany(u('https://www.linkedin.com/jobs/view/123'), document)).toBe('TikTok');
+    document.title = 'Chewy Inc hiring Software Engineer in Boston, MA | LinkedIn';
+    expect(deriveCompany(u('https://www.linkedin.com/jobs/view/123'), document)).toBe('Chewy');
+  });
+});
+
+describe('cleanCompany', () => {
+  it.each([
+    ['Chewy Inc', 'Chewy'],
+    ['Chewy, Inc.', 'Chewy'],
+    ['Acme Holdings Ltd', 'Acme Holdings'],
+    ['Acme Corp', 'Acme Corp'],
+    ['McKinsey & Co', 'McKinsey & Co'],
+    ['Stripe  (Payments)', 'Stripe'],
+  ])('%s → %s', (a, b) => expect(cleanCompany(a)).toBe(b));
 });

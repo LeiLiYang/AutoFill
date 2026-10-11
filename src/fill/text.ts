@@ -44,12 +44,44 @@ function blurEl(el: HTMLElement): void {
   }
 }
 
+/** Focus the control; if the browser refuses (background tab), still tell the page it was focused. */
+function focusEl(el: HTMLElement): void {
+  let native = false;
+  const mark = () => (native = true);
+  el.addEventListener('focusin', mark, { once: true });
+  el.focus();
+  el.removeEventListener('focusin', mark);
+  if (!native) {
+    const win = el.ownerDocument.defaultView as any;
+    el.dispatchEvent(new win.FocusEvent('focus', { bubbles: false }));
+    el.dispatchEvent(new win.FocusEvent('focusin', { bubbles: true }));
+  }
+}
+
+/**
+ * Type the text through the browser's own editing command, which produces the same input events as
+ * real typing. Form libraries that track "touched"/"dirty" state (Ashby) trust these more than
+ * synthetic events. Returns false when unavailable or the value did not land.
+ */
+function typeNatively(el: HTMLInputElement | HTMLTextAreaElement, text: string): boolean {
+  const doc = el.ownerDocument;
+  if (doc.activeElement !== el || typeof doc.execCommand !== 'function') return false;
+  try {
+    el.select();
+    return doc.execCommand('insertText', false, text) && el.value === text;
+  } catch {
+    return false;
+  }
+}
+
 /** Fill a text-like control. Returns true if the control ends up holding the value. */
 export function fillText(el: HTMLInputElement | HTMLTextAreaElement, text: string): boolean {
   if (!isFillable(el) || el.readOnly) return false;
-  el.focus();
-  setNativeValue(el, text);
-  dispatchInput(el, text);
+  focusEl(el);
+  if (!typeNatively(el, text)) {
+    setNativeValue(el, text);
+    dispatchInput(el, text);
+  }
   dispatchChange(el);
   blurEl(el);
   return el.value === text;

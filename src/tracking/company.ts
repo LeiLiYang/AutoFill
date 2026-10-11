@@ -50,15 +50,42 @@ function companyFromJsonLd(doc: Document): string | null {
   return null;
 }
 
-function companyFromMetadata(doc: Document): string | null {
+/** Legal-form suffixes that are never part of the name people use ("Chewy Inc" → "Chewy"). */
+const LEGAL_SUFFIX = /[\s,]+(inc|incorporated|llc|l\.l\.c|ltd|limited|gmbh|plc|ulc|llp|lp)\.?$/i;
+
+/** The short name used in the sheet: whitespace collapsed, parentheticals and legal suffixes dropped. */
+export function cleanCompany(name: string): string {
+  let out = name.replace(/\s+/g, ' ').replace(/\s*\([^)]*\)\s*$/, '').trim();
+  for (let prev = ''; prev !== out; ) {
+    prev = out;
+    out = out.replace(LEGAL_SUFFIX, '').trim();
+  }
+  return out || name.trim();
+}
+
+/** LinkedIn titles name the company, not the page: "Role | Company | LinkedIn", "Company hiring Role in City | LinkedIn". */
+function companyFromLinkedInTitle(title: string): string | null {
+  const hiring = title.match(/^(.+?)\s+hiring\s+.+\s+\|\s*LinkedIn\s*$/i)?.[1];
+  if (hiring) return hiring.trim();
+  const parts = title.split(/\s+\|\s+/).map((x) => x.trim());
+  if (parts.length >= 3 && /^linkedin$/i.test(parts[parts.length - 1]!)) return parts[parts.length - 2]!;
+  return null;
+}
+
+function companyFromMetadata(doc: Document, onLinkedIn = false): string | null {
   const ld = companyFromJsonLd(doc);
   if (ld) return ld;
   const sel = doc.querySelector(
-    '.company-name, [data-qa="company-name"], [class*="company-name" i], .job-details-jobs-unified-top-card__company-name, .topcard__org-name-link',
+    '.company-name, [data-qa="company-name"], [class*="company-name" i], .job-details-jobs-unified-top-card__company-name, .job-details-jobs-unified-top-card__company-name a, .topcard__org-name-link',
   );
   if (sel?.textContent?.trim()) return sel.textContent.trim();
+  if (onLinkedIn) {
+    const li = companyFromLinkedInTitle(doc.title ?? '');
+    if (li) return li;
+  }
   const og = doc.querySelector('meta[property="og:site_name"]')?.getAttribute('content');
-  if (og?.trim()) return og.trim();
+  if (og?.trim() && !/^linkedin$/i.test(og.trim())) return og.trim();
+  if (onLinkedIn) return null; // "Role - Company" guessing below would return the job title
   // "Job Application for Backend Engineer at Acme" / "Acme - Software Engineer" / "Software Engineer | Acme"
   const title = doc.title ?? '';
   const at = title.match(/\bat\s+(.+?)\s*$/i)?.[1];
@@ -85,10 +112,20 @@ function companyFromEmbeds(doc: Document): string | null {
  */
 export function deriveCompany(url: URL, doc?: Document): string {
   const slug = companySlugFromUrl(url) ?? (doc ? companyFromEmbeds(doc) : null);
-  const meta = doc ? companyFromMetadata(doc) : null;
+  const metaRaw = doc ? companyFromMetadata(doc, /(^|\.)linkedin\.com$/i.test(url.hostname)) : null;
+  const meta = metaRaw ? cleanCompany(metaRaw) : null;
   if (slug) {
     const sc = compact(slug);
-    if (meta && sc && compact(meta).startsWith(sc)) return meta;
+    if (meta && sc) {
+      // The shortest leading words of the metadata name that spell the slug: "Chewy Inc" and
+      // "TikTok Live" both give the company itself when the slug is chewy / tiktok.
+      const words = meta.split(' ');
+      for (let n = 1; n <= words.length; n++) {
+        const head = words.slice(0, n).join(' ');
+        if (compact(head) === sc) return head;
+        if (compact(head).length > sc.length) break;
+      }
+    }
     return prettifySlug(slug);
   }
   if (meta) return meta;

@@ -19,11 +19,19 @@ export interface PromptInput {
   maxChars?: number;
 }
 
+/** Says outright whether a degree is finished: dates alone let the model assume the applicant is still a student. */
+function educationStatus(e: Profile['education'][number], now: Date): string {
+  if (e.current) return ', currently enrolled';
+  if (!/^\d{4}-\d{2}/.test(e.endDate ?? '')) return '';
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  return e.endDate.slice(0, 7) <= today ? ', COMPLETED: graduated, not a student' : ', expected graduation, not yet completed';
+}
+
 /**
  * Only what the answer needs is sent: name, links, education and work history. Contact details,
  * address, salary and demographic answers never leave the browser.
  */
-export function profileSummary(p: Profile): string {
+export function profileSummary(p: Profile, now: Date = new Date()): string {
   const name = [p.contact.firstName, p.contact.lastName].filter(Boolean).join(' ');
   const lines: string[] = [];
   if (name) lines.push(`Name: ${name}`);
@@ -32,7 +40,7 @@ export function profileSummary(p: Profile): string {
   if (p.education.length) {
     lines.push('Education:');
     for (const e of p.education) {
-      lines.push(`- ${[e.degree, e.field].filter(Boolean).join(' in ')} at ${e.school} (${e.startDate || '?'} to ${e.current ? 'present' : e.endDate || '?'})${e.gpa ? `, GPA ${e.gpa}` : ''}`);
+      lines.push(`- ${[e.degree, e.field].filter(Boolean).join(' in ')} at ${e.school} (${e.startDate || '?'} to ${e.current ? 'present' : e.endDate || '?'}${educationStatus(e, now)})${e.gpa ? `, GPA ${e.gpa}` : ''}`);
     }
   }
   if (p.experience.length) {
@@ -44,7 +52,7 @@ export function profileSummary(p: Profile): string {
   return lines.join('\n');
 }
 
-export function buildPrompt(i: PromptInput): { system: string; user: string } {
+export function buildPrompt(i: PromptInput, now: Date = new Date()): { system: string; user: string } {
   // A form's character limit can only shorten the answer, never lengthen it past the concise default.
   const words = i.maxChars ? Math.max(20, Math.min(MAX_WORDS, Math.floor(i.maxChars / 7))) : DEFAULT_WORDS;
   const system = [
@@ -58,6 +66,7 @@ export function buildPrompt(i: PromptInput): { system: string; user: string } {
     '- Use the job posting only to tailor emphasis and to name the company or role correctly. Do not claim the applicant has experience the posting asks for unless their profile or samples show it.',
     "- Match the tone and style of the applicant's writing; do not copy sentences from the samples verbatim, and do not mention the samples.",
     `- If the question cannot be answered honestly from the information given (for example it asks for a specific fact that is not provided), reply with exactly ${INSUFFICIENT} and nothing else.`,
+    "- Today's date is given after the profile. Describe the applicant's education as the profile states it: if a degree is marked COMPLETED, they have graduated and are not a student, so never call them a student or say they are graduating. Say \"I graduated from…\" or \"my degree in…\". Mention a GPA only when the question asks about grades or academics.",
     '- Output only the answer text: no preamble, no quotation marks, no sign-off.',
   ].join('\n');
 
@@ -68,7 +77,8 @@ export function buildPrompt(i: PromptInput): { system: string; user: string } {
   if (i.posting?.descriptionMd?.trim()) {
     parts.push(`<job_posting>\n${i.posting.descriptionMd.slice(0, MAX_POSTING_CHARS)}\n</job_posting>`);
   }
-  parts.push(`<applicant_profile>\n${profileSummary(i.profile) || '(no profile details provided)'}\n</applicant_profile>`);
+  parts.push(`<applicant_profile>\n${profileSummary(i.profile, now) || '(no profile details provided)'}
+Today's date: ${now.toISOString().slice(0, 10)}\n</applicant_profile>`);
   if (i.background?.length) {
     parts.push(
       `<writing_samples note="Things the applicant has written, without the original question. Background on their interests, experience and voice.">\n${i.background

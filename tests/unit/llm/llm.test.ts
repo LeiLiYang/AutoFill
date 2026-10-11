@@ -285,3 +285,13 @@ describe('posting cache', () => {
     expect(await getCachedPosting(kv, 'https://x/0')).toBeNull(); // evicted
   });
 });
+
+describe('education status', () => {
+  const edu = { school: 'McGill', degree: 'BEng', field: 'Software Engineering', startDate: '2022-09', endDate: '2026-05', gpa: '3.50', current: false };
+  it('marks a finished degree as completed', () => {
+    const p = { ...defaultProfile(), education: [edu] };
+    expect(profileSummary(p, new Date('2026-10-08'))).toContain('COMPLETED');
+    expect(profileSummary(p, new Date('2025-10-08'))).toContain('expected graduation');
+    expect(profileSummary({ ...p, education: [{ ...edu, current: true }] }, new Date('2026-10-08'))).toContain('currently enrolled');
+  });
+});

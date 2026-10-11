@@ -14,7 +14,7 @@ describe('extractPosting: per-ATS selectors', () => {
     const p = extractPosting(document, u('https://boards.greenhouse.io/acme/jobs/123?gh_src=x'));
     expect(p).toMatchObject({
       title: 'Backend Engineer',
-      company: 'Acme Corp',
+      company: 'Acme',
       location: 'Montreal, QC',
       platform: 'greenhouse',
       canonicalUrl: 'https://boards.greenhouse.io/acme/jobs/123',

@@ -1,13 +1,19 @@
-import { isEasyApply, isLinkedIn } from '../adapters/linkedin';
+import { appliesOnCompanySite, isEasyApply, isLinkedIn } from '../adapters/linkedin';
 import type { Category, Channel, Location } from '../config/tracking';
 import type { ExtractedPosting } from '../posting/extract';
 import { classifyCategory } from './category';
 import { formatSheetDate } from './date';
 import { classifyLocation } from './location';
 
-/** "linkedin" only for a LinkedIn Easy Apply; every other application is "website". */
+/**
+ * "linkedin" for a LinkedIn Easy Apply; every other application is "website". On LinkedIn the
+ * page markup changes often, so it counts as Easy Apply unless the posting plainly applies on the
+ * company's own site.
+ */
 export function detectChannel(url: URL, doc: Document): Channel {
-  return isLinkedIn(url) && isEasyApply(doc) ? 'linkedin' : 'website';
+  if (!isLinkedIn(url)) return 'website';
+  if (isEasyApply(doc, url)) return 'linkedin';
+  return appliesOnCompanySite(doc) ? 'website' : 'linkedin';
 }
 
 /** What the log card starts with. Everything is editable; nothing is written until the user confirms. */
