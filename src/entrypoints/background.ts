@@ -1,5 +1,9 @@
 import { savePosting } from '../background/savePosting';
-import { sdkDeps, type AnswerResult, type ClaudeDeps } from '../llm/client';
+import { describeLlmError, sdkDeps, type AnswerResult, type ClaudeDeps } from '../llm/client';
+import { llmConfig, notReadyReason } from '../llm/config';
+import { draftKey, getDraft, saveDraft } from '../llm/draftCache';
+import { makeClient } from '../llm/providers';
+import type { Fetch } from '../llm/providers/types';
 import { answerQuestion } from '../llm/answerQuestion';
 import { cachePosting, getCachedPosting } from '../posting/cache';
 import { getFile } from '../profile/files';
@@ -14,6 +18,7 @@ import {
   type FrameReport,
   type LogApplicationResponse,
   type SaveAnswersResult,
+  type TestLlmResult,
   type TestSheetsResult,
   type ToBackground,
   type ToContent,
@@ -88,6 +93,7 @@ async function triggerFill(tabId: number, overwriteOverride?: boolean) {
   const settings = await loadSettings();
   const overwrite = overwriteOverride ?? settings.overwrite;
   await enqueue(tabId, () => chrome.storage.session.set({ [reportsKey(tabId)]: [] }));
+  postingMemo.delete(tabId); // the tab may show a different posting than at the last fill
 
   void flagOnIcon(tabId, null);
 
@@ -197,31 +203,71 @@ async function openLogPanel(tabId: number) {
 
 const runSavePosting = (tabId: number) => savePosting(tabId, { ensureInjected, getFrames: getReports });
 
-/** The Anthropic client factory is swappable so end-to-end tests never call the real API. */
+/** The Anthropic client factory and `fetch` are swappable so end-to-end tests never call a real API. */
 let claudeFactory: (apiKey: string) => ClaudeDeps = sdkDeps;
+let llmFetch: Fetch = (input, init) => fetch(input, init);
+const llmClient = (config: Parameters<typeof makeClient>[0]) => makeClient(config, { claude: (key) => claudeFactory(key), fetch: (i, n) => llmFetch(i, n) });
+
+/** Settings page: check the key works and list the models it can use. Sends no prompt, costs nothing. */
+async function testLlm(): Promise<TestLlmResult> {
+  const config = llmConfig(await loadSettings());
+  if (!config.ready && !(config.provider !== 'anthropic' && !config.model && (config.apiKey || config.baseUrl))) {
+    return { ok: false, message: `${notReadyReason(config)} Save your settings first.` };
+  }
+  try {
+    const models = await llmClient(config).listModels();
+    return { ok: true, models, label: config.label };
+  } catch (e) {
+    return { ok: false, message: describeLlmError(e, config.label, config.model).message };
+  }
+}
+
+interface PagePosting {
+  canonicalUrl: string;
+  posting: { title: string; company: string; descriptionMd?: string };
+}
 
 /** The job description for the page the form is on: from the page itself, else cached by canonical URL. */
-async function postingFor(tabId: number) {
+async function readPosting(tabId: number): Promise<PagePosting | null> {
   const res = (await chrome.tabs.sendMessage(tabId, { type: 'extract-posting' } satisfies ToContent, { frameId: 0 }).catch(() => undefined)) as
     | { posting: import('../messaging/protocol').ExtractedPosting }
     | undefined;
   const p = res?.posting;
   if (!p) return null;
-  if (!p.formOnly && p.descriptionMd.length >= 200) return { title: p.title, company: p.company, descriptionMd: p.descriptionMd };
+  if (!p.formOnly && p.descriptionMd.length >= 200) {
+    return { canonicalUrl: p.canonicalUrl, posting: { title: p.title, company: p.company, descriptionMd: p.descriptionMd } };
+  }
   const cached = await getCachedPosting(chromeLocalStore, p.canonicalUrl);
-  return cached ?? { title: p.title, company: p.company };
+  return { canonicalUrl: p.canonicalUrl, posting: cached ?? { title: p.title, company: p.company } };
 }
 
-function runGenerateAnswer(tabId: number | undefined, msg: Extract<ToBackground, { type: 'generate-answer' }>): Promise<AnswerResult> {
-  return answerQuestion(
-    {
-      loadProfile,
-      loadSettings,
-      getPosting: () => (tabId == null ? Promise.resolve(null) : postingFor(tabId)),
-      claude: (key) => claudeFactory(key),
-    },
-    { question: msg.question, maxLength: msg.maxLength },
+/** One fill asks about the same page once per question: read it once and reuse it for a few seconds. */
+const POSTING_MEMO_MS = 20_000;
+const postingMemo = new Map<number, { at: number; value: Promise<PagePosting | null> }>();
+function postingFor(tabId: number): Promise<PagePosting | null> {
+  const hit = postingMemo.get(tabId);
+  if (hit && Date.now() - hit.at < POSTING_MEMO_MS) return hit.value;
+  const value = readPosting(tabId);
+  postingMemo.set(tabId, { at: Date.now(), value });
+  return value;
+}
+
+async function runGenerateAnswer(tabId: number | undefined, msg: Extract<ToBackground, { type: 'generate-answer' }>): Promise<AnswerResult> {
+  const page = tabId == null ? null : await postingFor(tabId);
+  const config = llmConfig(await loadSettings());
+  const maxLength = msg.maxLength && msg.maxLength > 0 ? msg.maxLength : undefined;
+  // A draft already written for this question on this posting is reused, unless the user asked to overwrite.
+  const key = page && config.ready ? draftKey(page.canonicalUrl, msg.question, config.model, maxLength) : null;
+  if (key && !msg.fresh) {
+    const draft = await getDraft(chromeLocalStore, key);
+    if (draft) return { ok: true, text: draft };
+  }
+  const result = await answerQuestion(
+    { loadProfile, loadSettings, getPosting: async () => page?.posting ?? null, llm: llmClient },
+    { question: msg.question, maxLength },
   );
+  if (key && result.ok) await saveDraft(chromeLocalStore, key, result.text);
+  return result;
 }
 
 /** Sign in (if needed) and read column H: proves the OAuth client, Sheet ID and tab name work. */
@@ -263,6 +309,7 @@ export default defineBackground(() => {
       savePosting: runSavePosting,
       setSheets: (deps: SheetsDeps) => (sheetsDeps = deps),
       setClaude: (factory: (apiKey: string) => ClaudeDeps) => (claudeFactory = factory),
+      setLlmFetch: (f: Fetch) => (llmFetch = f),
       retryQueue: (interactive = false) => logger.retryPending(interactive),
     };
   }
@@ -323,6 +370,9 @@ export default defineBackground(() => {
         return true;
       case 'test-sheets':
         testSheets().then(sendResponse);
+        return true;
+      case 'test-llm':
+        testLlm().then(sendResponse);
         return true;
       case 'generate-answer':
         runGenerateAnswer(tabId, msg).then(sendResponse);

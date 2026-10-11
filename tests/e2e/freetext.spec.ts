@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { claudeCalls, installClaudeStub, launchExtension, patchSettings, seed, setAnswerBank, startServers, triggerFill, type Ext, type Servers } from './harness';
+import { claudeCalls, clearDrafts, installClaudeStub, launchExtension, patchSettings, seed, promptText, setAnswerBank, startServers, triggerFill, type Ext, type Servers } from './harness';
 
 let servers: Servers;
 let ext: Ext;
@@ -16,6 +16,7 @@ test.afterAll(async () => {
 test.beforeEach(async () => {
   await patchSettings(ext, { anthropicApiKey: '', model: 'claude-opus-5-5' });
   await setAnswerBank(ext, []);
+  await clearDrafts(ext);
   await installClaudeStub(ext, { text: 'I am drawn to Acme because it builds reliable payment systems.' });
 });
 
@@ -30,7 +31,7 @@ test('without an API key or a matching saved answer the field stays empty and is
   await triggerFill(ext, page);
   const panel = page.locator('#autofill-review-host .panel');
   await expect(panel).toContainText('Why do you want to work at Acme?');
-  await expect(panel).toContainText('no API key is set');
+  await expect(panel).toContainText('No Anthropic API key is set');
   expect(await page.locator('#q_why').inputValue()).toBe('');
   expect(await page.locator('#q_why').getAttribute('data-autofill-level')).toBe('red');
   expect(await claudeCalls(ext)).toHaveLength(0); // nothing was sent anywhere
@@ -63,10 +64,10 @@ test('with a key, drafts an answer from the posting and profile, and flags it ye
   await expect(page.locator('#autofill-review-host .panel')).toContainText('AI draft');
 
   const calls = await claudeCalls(ext);
-  const why = calls.find((c) => c.params.messages[0].content.includes('Why do you want to work at Acme?'))!;
+  const why = calls.find((c) => promptText(c.params).includes('Why do you want to work at Acme?'))!;
   expect(why.apiKey).toBe('sk-test');
   expect(why.params.model).toBe('claude-sonnet-5-5'); // model name is configurable
-  const prompt = why.params.system + why.params.messages[0].content;
+  const prompt = promptText(why.params);
   expect(prompt).toContain('payment infrastructure'); // the job posting scraped from the page
   expect(prompt).toContain('Analytical Engines'); // experience from the profile
   expect(prompt).toContain('I like building things that last.'); // saved answer as a style example
@@ -103,7 +104,7 @@ test('an already-answered question costs no API call, and an untouched AI draft 
   await page.locator('#q_why').fill('Typed by me before filling.');
   await triggerFill(ext, page);
   await expect(page.locator('#autofill-review-host .panel')).not.toContainText('Filling…');
-  expect((await claudeCalls(ext)).some((c) => c.params.messages[0].content.includes('Why do you want to work at Acme?'))).toBe(false);
+  expect((await claudeCalls(ext)).some((c) => promptText(c.params).includes('Why do you want to work at Acme?'))).toBe(false);
   expect(await page.locator('#q_why').inputValue()).toBe('Typed by me before filling.');
   await page.close(); // the helper finds the tab by URL, so only one tab may show this page
 
@@ -121,4 +122,26 @@ test('an already-answered question costs no API call, and an untouched AI draft 
   await panel.locator('button.action', { hasText: 'Save my answers' }).click();
   await expect(panel).toContainText('Saved 1 answer');
   await fresh.close();
+});
+
+test('filling the same application again reuses the draft instead of paying for a new one', async () => {
+  await patchSettings(ext, { anthropicApiKey: 'sk-test' });
+  const asked = async () => (await claudeCalls(ext)).filter((c) => promptText(c.params).includes('Why do you want to work at Acme?')).length;
+
+  const first = await open();
+  await triggerFill(ext, first);
+  await expect.poll(() => first.locator('#q_why').inputValue()).toContain('Acme');
+  expect(await asked()).toBe(1);
+  // The instructions and the posting + profile are marked cacheable; the question is not.
+  const params = (await claudeCalls(ext)).find((c) => promptText(c.params).includes('Why do you want to work at Acme?'))!.params;
+  expect(params.system[0].cache_control).toEqual({ type: 'ephemeral' });
+  expect(params.messages[0].content[0].cache_control).toEqual({ type: 'ephemeral' });
+  expect(params.messages[0].content[1].cache_control).toBeUndefined();
+  await first.close();
+
+  const again = await open();
+  await triggerFill(ext, again);
+  await expect.poll(() => again.locator('#q_why').inputValue()).toContain('Acme');
+  expect(await asked()).toBe(1); // no second call
+  await again.close();
 });

@@ -6,6 +6,7 @@ import { deepQueryAll } from '../detect/deepQuery';
 import { runFill } from '../fill/engine';
 import { findAnswer } from '../llm/answerBank';
 import type { AnswerResult } from '../llm/client';
+import { llmConfig, notReadyReason } from '../llm/config';
 import type {
   FileMessage,
   FrameReport,
@@ -104,19 +105,17 @@ export default defineContentScript({
     }
 
     /** Open-ended questions: a close saved answer first, then (only with an API key) an AI draft. */
-    function makeFreeText(profile: Profile) {
+    function makeFreeText(profile: Profile, overwrite: boolean) {
       return async (d: FieldDescriptor): Promise<FreeTextResult> => {
         const question = (d.label || d.nearbyText || '').trim();
         if (!question) return { kind: 'none', reason: 'free-text question (no question text found)' };
         const bank = findAnswer(question, profile.answerBank);
         if (bank) return { kind: 'bank', text: bank.entry.answer, score: bank.score };
 
-        const settings = await loadSettings();
-        if (!settings.anthropicApiKey.trim()) {
-          return { kind: 'none', reason: 'free-text question: no saved answer matches and no API key is set' };
-        }
+        const llm = llmConfig(await loadSettings());
+        if (!llm.ready) return { kind: 'none', reason: `free-text question: no saved answer matches. ${notReadyReason(llm)}` };
         const maxLength = (d.element as HTMLTextAreaElement).maxLength;
-        const res = await send<AnswerResult>({ type: 'generate-answer', question, maxLength: maxLength > 0 ? maxLength : undefined });
+        const res = await send<AnswerResult>({ type: 'generate-answer', question, maxLength: maxLength > 0 ? maxLength : undefined, fresh: overwrite });
         return res?.ok ? { kind: 'ai', text: res.text } : { kind: 'none', reason: `free-text question: ${res?.message ?? 'no answer'}` };
       };
     }
@@ -177,7 +176,7 @@ export default defineContentScript({
         const hit = findAnswer((d.label || d.nearbyText || '').trim(), profile.answerBank);
         return hit ? { text: hit.entry.answer, score: hit.score } : null;
       };
-      const result = await runFill({ adapter, ctx, profile, options: { overwrite, getFile, freeText: makeFreeText(profile), bankAnswer } });
+      const result = await runFill({ adapter, ctx, profile, options: { overwrite, getFile, freeText: makeFreeText(profile, overwrite), bankAnswer } });
       descriptors = result.descriptors;
       lastReports = result.reports;
       generated = result.generated;

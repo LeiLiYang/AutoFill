@@ -2,8 +2,10 @@ import Anthropic from '@anthropic-ai/sdk';
 import { describe, expect, it, vi } from 'vitest';
 import { BANK_CONFIDENT, findAnswer, questionSimilarity, samplesFromPaste, splitSamples, styleSamples } from '../../../src/llm/answerBank';
 import { answerQuestion } from '../../../src/llm/answerQuestion';
-import { fitToLimit, generateAnswer, limitParagraphs, supportsEffort, type ClaudeDeps } from '../../../src/llm/client';
-import { INSUFFICIENT, buildPrompt, profileSummary } from '../../../src/llm/prompt';
+import { fitToLimit, generateAnswer, limitParagraphs, plainPunctuation, supportsEffort, type ClaudeDeps } from '../../../src/llm/client';
+import type { LlmConfig } from '../../../src/llm/config';
+import { anthropicClient } from '../../../src/llm/providers/anthropic';
+import { INSUFFICIENT, answerLength, buildPrompt, profileSummary, trimPosting } from '../../../src/llm/prompt';
 import { cachePosting, getCachedPosting } from '../../../src/posting/cache';
 import { memoryStore } from '../../../src/profile/storage';
 import { defaultProfile, defaultSettings, type Answer } from '../../../src/profile/schema';
@@ -40,24 +42,34 @@ describe('answer bank matching', () => {
     expect(findAnswer('Tell us about a project you are proud of', bank)!.entry.answer).toBe('The engine.');
   });
 
-  it('chooses style samples by relevance, falling back to the most recent', () => {
+  it('chooses past answers by relevance and sends none when nothing relates', () => {
     const bank = [ans('Why this company?', 'A', [], '2026-01-01'), ans('Biggest challenge', 'B', [], '2026-03-01'), ans('Favorite tool', 'C', [], '2026-02-01')];
     expect(styleSamples('Why do you want this company?', bank, 1).qa[0]!.answer).toBe('A');
-    expect(styleSamples('zzz unrelated qqq', bank, 2).qa.map((s) => s.answer)).toEqual(['B', 'C']);
+    // No writing samples at all: one recent answer stands in, so the model still hears the applicant.
+    expect(styleSamples('zzz unrelated qqq', bank).qa.map((s) => s.answer)).toEqual(['B']);
+    // With a writing sample to learn the voice from, unrelated past answers are not paid for.
+    expect(styleSamples('zzz unrelated qqq', [...bank, ans('', 'I like building compilers.')]).qa).toEqual([]);
   });
 
-  it('always includes answers saved without a question as background, newest first, within a budget', () => {
+  it('sends the few writing samples closest to the question, not the whole bank', () => {
     const bank = [
       ans('', 'I built a compiler for fun and love systems programming.', [], '2026-01-01'),
-      ans('', 'Robotics club captain; I enjoy mentoring.', [], '2026-02-01'),
+      ans('', 'Robotics club captain; I enjoy mentoring younger students.', [], '2026-02-01'),
+      ans('', 'I like long hikes.', [], '2026-03-01'),
+      ans('', 'I cook on weekends.', [], '2026-04-01'),
       ans('Why us?', 'Because.', [], '2026-03-01'),
     ];
-    const { qa, background } = styleSamples('Totally unrelated question zzz', bank);
-    expect(background.map((b) => b.answer.slice(0, 8))).toEqual(['Robotics', 'I built ']);
-    expect(qa.map((q) => q.question)).toEqual(['Why us?']);
+    const { background } = styleSamples('Tell us about mentoring or teaching others', bank);
+    expect(background).toHaveLength(3);
+    expect(background[0]!.answer).toContain('Robotics'); // shares "mentoring" with the question
+    // Nothing to rank on: the newest stand in.
+    expect(styleSamples('zzz qqq', bank).background.map((b) => b.answer.slice(0, 6))).toEqual(['I cook', 'I like', 'Roboti']);
 
-    const huge = Array.from({ length: 20 }, (_, i) => ans('', 'x'.repeat(1700), [], `2026-01-${String(i + 1).padStart(2, '0')}`));
-    expect(styleSamples('q', huge).background.length).toBeLessThanOrEqual(4); // 8000-char budget
+    const huge = Array.from({ length: 20 }, (_, i) => ans('', 'x'.repeat(5000), [], `2026-01-${String(i + 1).padStart(2, '0')}`));
+    const sent = styleSamples('q', huge).background;
+    expect(sent).toHaveLength(3);
+    expect(sent.every((b) => b.answer.length <= 1500)).toBe(true);
+    expect(styleSamples('Why us?', [ans('Why us?', 'y'.repeat(5000))]).qa[0]!.answer).toHaveLength(1200);
   });
 
   it('never matches a question-less entry to a form question', () => {
@@ -95,16 +107,16 @@ describe('prompt', () => {
   const out = buildPrompt({ question: 'Why Acme?', profile, posting, samples: [ans('Why us?', 'I like building things.')] });
 
   it('includes the posting, the relevant profile, and style samples', () => {
-    expect(out.user).toContain('payment infrastructure');
-    expect(out.user).toContain('Analytical Engines');
-    expect(out.user).toContain('Example University');
+    expect(out.stable).toContain('payment infrastructure');
+    expect(out.stable).toContain('Analytical Engines');
+    expect(out.stable).toContain('Example University');
     expect(out.user).toContain('Q: Why us?\nA: I like building things.');
     expect(out.user).toContain('<question>\nWhy Acme?\n</question>');
   });
 
   it('never sends contact details, address, salary or demographics', () => {
     for (const secret of ['secret@example.com', '555-0100', '1 Private Street', '123456', 'Female']) {
-      expect(out.system + out.user).not.toContain(secret);
+      expect(out.system + out.stable + out.user).not.toContain(secret);
     }
     expect(profileSummary(profile)).not.toContain('@');
   });
@@ -123,27 +135,76 @@ describe('prompt', () => {
     expect(out.user).not.toContain('<writing_samples'); // none provided: no empty block
   });
 
-  it('asks for one concise answer of at most two paragraphs, synthesised rather than a list of past answers', () => {
+  it('asks for one answer with a single through-line, in plain prose and the applicant\'s own voice', () => {
     const many = buildPrompt({
       question: 'Why this role?',
       profile,
       samples: [ans('Why us?', 'First past answer about mission.'), ans('Proud project?', 'Second past answer about a compiler.')],
       background: [ans('', 'Third sample about robotics mentoring.')],
     });
-    expect(many.system).toMatch(/one or two short paragraphs/i);
-    expect(many.system).toMatch(/never more than two paragraphs/i);
     expect(many.system).toMatch(/ONE coherent answer/);
     expect(many.system).toMatch(/Never list, stack or summarise several past answers/);
-    expect(many.system).toMatch(/choose the one or two experiences/i);
     expect(many.system).toMatch(/no bullet or numbered lists/i);
+    expect(many.system).toMatch(/start with the answer/i);
+    expect(many.system).toMatch(/em dashes/i);
+    expect(many.system).toMatch(/ceiling, not a target/i);
   });
 
-  it('never lets a generous form limit stretch the answer beyond the concise cap', () => {
-    const roomy = buildPrompt({ question: 'q', profile, samples: [], maxChars: 5000 });
-    expect(roomy.system).toContain('about 180 words or fewer');
-    const tight = buildPrompt({ question: 'q', profile, samples: [], maxChars: 280 });
-    expect(tight.system).toContain('about 40 words or fewer');
-    expect(buildPrompt({ question: 'q', profile, samples: [] }).system).toContain('about 150 words or fewer');
+  it('keeps the instructions identical for every question so they can be cached', () => {
+    const a = buildPrompt({ question: 'Expected salary?', profile, posting, samples: [], maxChars: 100 });
+    const b = buildPrompt({ question: 'Write a cover letter', profile, posting, samples: [ans('x', 'y')] });
+    expect(a.system).toBe(b.system);
+    expect(a.stable).toBe(b.stable); // posting and profile: the same for every question on the page
+    expect(a.user).not.toBe(b.user);
+  });
+
+  it('sends voice notes with the shared context', () => {
+    const p = buildPrompt({ question: 'q', profile, samples: [], voiceNotes: '  Short sentences. Canadian spelling.  ' });
+    expect(p.stable).toContain('<voice_notes');
+    expect(p.stable).toContain('Short sentences. Canadian spelling.');
+    expect(buildPrompt({ question: 'q', profile, samples: [] }).stable).not.toContain('voice_notes');
+  });
+
+  it.each([
+    ['What are your salary expectations?', 'fact'],
+    ['When can you start?', 'fact'],
+    ['How did you hear about us?', 'fact'],
+    ['Do you require visa sponsorship?', 'fact'],
+    ['Why do you want to work at Acme?', 'paragraph'],
+    ['Describe a project you are proud of.', 'paragraph'],
+    ['Tell us about a time you disagreed with a teammate.', 'paragraph'],
+    ['Please include a cover letter.', 'essay'],
+    ['In 300 words, tell us why you are a fit.', 'essay'],
+  ])('sizes the answer to the question: %s → %s', (question, shape) => {
+    expect(answerLength(question).shape).toBe(shape);
+  });
+
+  it('asks for one sentence, one paragraph or two paragraphs accordingly', () => {
+    const lengthOf = (question: string, maxChars?: number) => /<length>\n(.*)\n<\/length>/.exec(buildPrompt({ question, profile, samples: [], maxChars }).user)![1]!;
+    expect(lengthOf('When can you start?')).toMatch(/^One sentence.*At most 25 words/);
+    expect(lengthOf('Why do you want to work at Acme?')).toMatch(/^One paragraph, at most 110 words/);
+    expect(lengthOf('Please write a cover letter')).toMatch(/^Up to two paragraphs, at most 220 words/);
+  });
+
+  it('lets a form limit shorten the answer but never stretch it', () => {
+    expect(answerLength('Why Acme?', 5000).words).toBe(110);
+    expect(answerLength('Why Acme?', 280).words).toBe(40);
+    expect(answerLength('Why Acme?', 20).words).toBe(12);
+  });
+
+  it('drops benefits, pay and EEO sections from the posting, and keeps the role', () => {
+    const md = [
+      '## About the role', 'You will build payment systems. '.repeat(10),
+      '## Benefits', 'Dental, vision and a gym stipend.',
+      '**Equal Opportunity Employer**', 'We celebrate diversity.',
+      '## What you bring', 'Five years of backend experience. '.repeat(5),
+    ].join('\n\n');
+    const trimmed = trimPosting(md);
+    expect(trimmed).toContain('payment systems');
+    expect(trimmed).toContain('What you bring');
+    expect(trimmed).not.toContain('Dental');
+    expect(trimmed).not.toContain('celebrate diversity');
+    expect(trimPosting('No headings here, just a short note.')).toBe('No headings here, just a short note.');
   });
 
   it('forbids inventing experience and defines the insufficient-info escape hatch', () => {
@@ -154,14 +215,18 @@ describe('prompt', () => {
 
   it('truncates a very long posting and states the form limit', () => {
     const long = buildPrompt({ question: 'q', profile, samples: [], posting: { descriptionMd: 'x'.repeat(50_000) }, maxChars: 500 });
-    expect(long.user.length).toBeLessThan(8000);
-    expect(long.system).toContain('at most 500 characters');
+    expect((long.stable + long.user).length).toBeLessThan(8000);
+    expect(long.user).toContain('at most 500 characters');
   });
 
   it('works with an empty profile and no posting', () => {
-    expect(buildPrompt({ question: 'q', profile: defaultProfile(), samples: [], posting: null }).user).toContain('no profile details');
+    expect(buildPrompt({ question: 'q', profile: defaultProfile(), samples: [], posting: null }).stable).toContain('no profile details');
   });
 });
+
+/** Everything the model is sent, whatever blocks it is split into for caching. */
+const sentText = (params: any): string =>
+  [params.system, params.messages[0].content].flatMap((part: any) => (typeof part === 'string' ? [part] : part.map((b: any) => b.text))).join('');
 
 describe('client', () => {
   const ok = (text: string, stop_reason = 'end_turn'): ClaudeDeps => ({
@@ -183,6 +248,25 @@ describe('client', () => {
     expect((h.create as any).mock.calls[0][0].output_config).toBeUndefined();
     expect(supportsEffort('claude-sonnet-5-5')).toBe(true);
     expect(supportsEffort('claude-haiku-4-5')).toBe(false);
+  });
+
+  it('marks the instructions and the shared context as cacheable, and keeps the question outside the cache', async () => {
+    const d = ok('x');
+    await generateAnswer(d, { ...req, stable: 'POSTING AND PROFILE\n\n' });
+    const sent = (d.create as any).mock.calls[0][0];
+    expect(sent.system).toEqual([{ type: 'text', text: 's', cache_control: { type: 'ephemeral' } }]);
+    expect(sent.messages[0].content).toEqual([
+      { type: 'text', text: 'POSTING AND PROFILE\n\n', cache_control: { type: 'ephemeral' } },
+      { type: 'text', text: 'u' },
+    ]);
+    expect(supportsEffort('claude-haiku-5-5')).toBe(true);
+  });
+
+  it('replaces em dashes with plain punctuation and leaves number ranges alone', async () => {
+    expect(plainPunctuation('I built it — twice — and it worked.')).toBe('I built it, twice, and it worked.');
+    expect(plainPunctuation('From 2019–2021 I led it – happily.')).toBe('From 2019–2021 I led it, happily.');
+    expect(plainPunctuation('That was the plan —.')).toBe('That was the plan.');
+    expect(await generateAnswer(ok('It shipped — on time.'), req)).toEqual({ ok: true, text: 'It shipped, on time.' });
   });
 
   it('turns the insufficient-info marker into a refusal to guess', async () => {
@@ -237,7 +321,7 @@ describe('answerQuestion', () => {
         loadProfile: async () => profile,
         loadSettings: async () => ({ ...defaultSettings(), anthropicApiKey: apiKey, model: 'claude-sonnet-5-5' }),
         getPosting: async () => ({ company: 'Acme', title: 'SWE', descriptionMd: 'We build payment systems.' }),
-        claude: (key: string) => ({ create: (p: any) => create({ ...p, __key: key }) }) as ClaudeDeps,
+        llm: (config: LlmConfig) => anthropicClient({ create: (p: any) => create({ ...p, __key: config.apiKey }) } as ClaudeDeps),
       },
     };
   };
@@ -256,11 +340,11 @@ describe('answerQuestion', () => {
         loadProfile: async () => profile,
         loadSettings: async () => ({ ...defaultSettings(), anthropicApiKey: 'k' }),
         getPosting: async () => null,
-        claude: () => ({ create }) as ClaudeDeps,
+        llm: () => anthropicClient({ create } as ClaudeDeps),
       },
       { question: 'Tell us something about yourself' },
     );
-    expect(create.mock.calls[0]![0].messages[0].content).toContain('robotics club');
+    expect(sentText(create.mock.calls[0]![0])).toContain('robotics club');
   });
 
   it('uses the configured model, the key, the posting and relevant samples', async () => {
@@ -270,9 +354,9 @@ describe('answerQuestion', () => {
     const sent = create.mock.calls[0]![0];
     expect(sent.__key).toBe('sk-test');
     expect(sent.model).toBe('claude-sonnet-5-5');
-    expect(sent.messages[0].content).toContain('We build payment systems.');
-    expect(sent.messages[0].content).toContain('I built an engine.');
-    expect(sent.system).toContain('at most 400 characters');
+    expect(sentText(sent)).toContain('We build payment systems.');
+    expect(sentText(sent)).toContain('I built an engine.');
+    expect(sentText(sent)).toContain('at most 400 characters');
   });
 });
 

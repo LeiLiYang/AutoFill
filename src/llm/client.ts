@@ -1,23 +1,17 @@
-import Anthropic from '@anthropic-ai/sdk';
 import { INSUFFICIENT } from './prompt';
+import { anthropicClient, sdkDeps, supportsEffort, type ClaudeDeps } from './providers/anthropic';
+import { LlmError, type LlmClient } from './providers/types';
+
+export { sdkDeps, supportsEffort, type ClaudeDeps };
 
 export type AnswerResult =
   | { ok: true; text: string }
   | { ok: false; kind: 'no-key' | 'auth' | 'rate-limit' | 'network' | 'refusal' | 'insufficient' | 'error'; message: string };
 
-export interface ClaudeDeps {
-  create(params: Anthropic.MessageCreateParamsNonStreaming): Promise<Anthropic.Message>;
-}
-
-/** The official SDK. `dangerouslyAllowBrowser` is required in an extension worker; the key never leaves this device except to Anthropic. */
-export function sdkDeps(apiKey: string): ClaudeDeps {
-  const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
-  return { create: (params) => client.messages.create(params) };
-}
-
-/** `output_config.effort` exists on the current Opus/Sonnet/Fable models; Haiku 4.5 and older reject it. */
-export const supportsEffort = (model: string) => /^claude-(opus|sonnet|fable|mythos)-(4-[5-9]|5)/.test(model);
-
+/**
+ * Room for the answer plus the model's own reasoning. Claude's current models always think before
+ * answering and that counts against this cap, so a tight cap would cut answers off mid-sentence.
+ */
 const MAX_OUTPUT_TOKENS = 2000;
 
 /** Cut to the character limit at a sentence (or word) boundary rather than mid-word. */
@@ -37,41 +31,59 @@ export function limitParagraphs(text: string, max = MAX_PARAGRAPHS): string {
   return [...paras.slice(0, max - 1), paras.slice(max - 1).join(' ')].join('\n\n');
 }
 
-export async function generateAnswer(
-  deps: ClaudeDeps,
-  req: { model: string; system: string; user: string; maxChars?: number },
-): Promise<AnswerResult> {
-  const params: Anthropic.MessageCreateParamsNonStreaming = {
-    model: req.model,
-    max_tokens: MAX_OUTPUT_TOKENS,
-    system: req.system,
-    messages: [{ role: 'user', content: req.user }],
-    // Short answers don't need deep reasoning; low effort keeps latency and cost down.
-    ...(supportsEffort(req.model) ? ({ output_config: { effort: 'low' } } as object) : {}),
-  };
+/**
+ * Em dashes are the most recognisable mark of machine-written text, and models use them even when
+ * asked not to. A spaced dash between words becomes a comma; number ranges (2019–2021) are left alone.
+ */
+export function plainPunctuation(text: string): string {
+  return text
+    .replace(/\s*—\s*/g, ', ')
+    .replace(/(?<=[A-Za-z,.])\s+–\s+(?=[A-Za-z])/g, ', ')
+    .replace(/,\s*,/g, ',')
+    .replace(/,\s*([.!?])/g, '$1');
+}
 
+/** A provider failure in the user's terms: what went wrong and what to do about it. */
+export function describeLlmError(e: unknown, label: string, model: string): Extract<AnswerResult, { ok: false }> {
+  if (!(e instanceof LlmError)) return { ok: false, kind: 'error', message: (e as Error).message };
+  switch (e.kind) {
+    case 'auth':
+      return { ok: false, kind: 'auth', message: `${label} rejected the API key. Check it in the extension settings.` };
+    case 'rate-limit':
+      return { ok: false, kind: 'rate-limit', message: `Rate limited by ${label}. Wait a moment and fill again.` };
+    case 'network':
+      return { ok: false, kind: 'network', message: `Could not reach ${label}. Check your connection.` };
+    case 'not-found':
+      return { ok: false, kind: 'error', message: `Model not found: ${model}. Check the model name in settings.` };
+    case 'bad-request':
+      return { ok: false, kind: 'error', message: `${label} rejected the request: ${e.message}` };
+    default:
+      return { ok: false, kind: 'error', message: `${label} API error ${e.status ?? ''}: ${e.message}` };
+  }
+}
+
+export interface AnswerRequest {
+  model: string;
+  system: string;
+  /** Context shared by every question on the page; providers cache it. */
+  stable?: string;
+  user: string;
+  maxChars?: number;
+  /** Provider name for error messages. */
+  label?: string;
+}
+
+export async function generateAnswer(client: LlmClient | ClaudeDeps, req: AnswerRequest): Promise<AnswerResult> {
+  const llm = 'complete' in client ? client : anthropicClient(client);
   try {
-    const msg = await deps.create(params);
-    if ((msg.stop_reason as string) === 'refusal') {
-      return { ok: false, kind: 'refusal', message: 'The model declined to answer this question. Write it yourself.' };
-    }
-    const text = msg.content
-      .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-      .map((b) => b.text)
-      .join('')
-      .trim();
-    if (!text) return { ok: false, kind: 'error', message: 'The model returned no text.' };
-    if (text.startsWith(INSUFFICIENT)) {
+    const reply = await llm.complete({ model: req.model, system: req.system, stable: req.stable, user: req.user, maxTokens: MAX_OUTPUT_TOKENS });
+    if (reply.refused) return { ok: false, kind: 'refusal', message: 'The model declined to answer this question. Write it yourself.' };
+    if (!reply.text) return { ok: false, kind: 'error', message: 'The model returned no text.' };
+    if (reply.text.startsWith(INSUFFICIENT)) {
       return { ok: false, kind: 'insufficient', message: 'Not enough in your profile or answer bank to answer this without inventing details. Write it yourself.' };
     }
-    return { ok: true, text: fitToLimit(limitParagraphs(text), req.maxChars) };
+    return { ok: true, text: fitToLimit(limitParagraphs(plainPunctuation(reply.text)), req.maxChars) };
   } catch (e) {
-    if (e instanceof Anthropic.AuthenticationError) return { ok: false, kind: 'auth', message: 'Anthropic rejected the API key. Check it in the extension settings.' };
-    if (e instanceof Anthropic.RateLimitError) return { ok: false, kind: 'rate-limit', message: 'Rate limited by Anthropic. Wait a moment and fill again.' };
-    if (e instanceof Anthropic.NotFoundError) return { ok: false, kind: 'error', message: `Model not found: ${req.model}. Check the model name in settings.` };
-    if (e instanceof Anthropic.BadRequestError) return { ok: false, kind: 'error', message: `Anthropic rejected the request: ${e.message}` };
-    if (e instanceof Anthropic.APIConnectionError) return { ok: false, kind: 'network', message: 'Could not reach Anthropic. Check your connection.' };
-    if (e instanceof Anthropic.APIError) return { ok: false, kind: 'error', message: `Anthropic API error ${e.status ?? ''}: ${e.message}` };
-    return { ok: false, kind: 'error', message: (e as Error).message };
+    return describeLlmError(e, req.label ?? 'Anthropic', req.model);
   }
 }

@@ -11,7 +11,8 @@ import {
 import { loadProfile, loadSettings, saveProfile, saveSettings } from '../../profile/store';
 import { deleteFile, getFile, putFile } from '../../profile/files';
 import { exportBackup, importBackup } from '../../profile/importExport';
-import type { TestSheetsResult, ToBackground } from '../../messaging/protocol';
+import type { TestLlmResult, TestSheetsResult, ToBackground } from '../../messaging/protocol';
+import { PROVIDER_LABELS, type ProviderId } from '../../llm/providers/types';
 import { samplesFromPaste } from '../../llm/answerBank';
 import { pendingRows } from '../../tracking/localLog';
 import { queueAction, useRows } from '../../tracking/useRows';
@@ -75,6 +76,12 @@ export function App() {
     setSettings((s) => ({ ...s, [key]: value }));
     setDirty(true);
   };
+  /** A field of the selected non-Anthropic provider. */
+  const editProvider = (field: 'apiKey' | 'model' | 'mappingModel' | 'baseUrl', value: string) => {
+    setSettings((s) => (s.provider === 'anthropic' ? s : setPath(s, `providers.${s.provider}.${field}`, value)));
+    setDirty(true);
+  };
+  const [models, setModels] = useState<string[]>([]);
 
   const pending = samplesFromPaste(paste);
   const save = async () => {
@@ -370,23 +377,6 @@ export function App() {
                   onChange={(e) => editSettings('tabName', e.target.value)}
                 />
               </label>
-              <label className="f">
-                Anthropic API key (optional, stored locally)
-                <input
-                  type="password"
-                  autoComplete="off"
-                  value={settings.anthropicApiKey}
-                  onChange={(e) => editSettings('anthropicApiKey', e.target.value.trim())}
-                />
-              </label>
-              <label className="f">
-                Model name
-                <input
-                  type="text"
-                  value={settings.model}
-                  onChange={(e) => editSettings('model', e.target.value.trim())}
-                />
-              </label>
             </div>
             <TestSheets dirty={dirty} />
             <div className="row">
@@ -399,12 +389,90 @@ export function App() {
                 Overwrite already-filled fields
               </label>
             </div>
+          </>,
+        )}
+
+      {tab === 'settings' &&
+        group(
+          'AI (optional)',
+          <>
+            <div className="grid">
+              <label className="f">
+                Provider
+                <select value={settings.provider} onChange={(e) => editSettings('provider', e.target.value)}>
+                  {PROVIDERS.map((id) => <option key={id} value={id}>{PROVIDER_NAMES[id]}</option>)}
+                </select>
+              </label>
+              {settings.provider === 'custom' && (
+                <label className="f">
+                  Server URL
+                  <input
+                    type="text"
+                    placeholder="https://openrouter.ai/api/v1 or http://localhost:11434/v1"
+                    value={settings.providers.custom.baseUrl}
+                    onChange={(e) => editProvider('baseUrl', e.target.value.trim())}
+                  />
+                </label>
+              )}
+              <label className="f">
+                API key (stored locally{settings.provider === 'custom' ? '; leave empty for a local server' : ''})
+                <input
+                  type="password"
+                  autoComplete="off"
+                  value={settings.provider === 'anthropic' ? settings.anthropicApiKey : settings.providers[settings.provider].apiKey}
+                  onChange={(e) =>
+                    settings.provider === 'anthropic' ? editSettings('anthropicApiKey', e.target.value.trim()) : editProvider('apiKey', e.target.value.trim())
+                  }
+                />
+              </label>
+              <label className="f">
+                Model for free-text answers
+                <input
+                  type="text"
+                  list="llm-models"
+                  placeholder={settings.provider === 'anthropic' ? 'claude-opus-5-5' : 'model id from your provider'}
+                  value={settings.provider === 'anthropic' ? settings.model : settings.providers[settings.provider].model}
+                  onChange={(e) => (settings.provider === 'anthropic' ? editSettings('model', e.target.value.trim()) : editProvider('model', e.target.value.trim()))}
+                />
+              </label>
+              <label className="f">
+                Model for recognising fields (a small, cheap one)
+                <input
+                  type="text"
+                  list="llm-models"
+                  placeholder={settings.provider === 'anthropic' ? 'claude-haiku-5-5' : 'blank = same as above'}
+                  value={settings.provider === 'anthropic' ? settings.anthropicMappingModel : settings.providers[settings.provider].mappingModel}
+                  onChange={(e) =>
+                    settings.provider === 'anthropic' ? editSettings('anthropicMappingModel', e.target.value.trim()) : editProvider('mappingModel', e.target.value.trim())
+                  }
+                />
+              </label>
+            </div>
+            <label className="f">
+              How you write (optional)
+              <textarea
+                rows={3}
+                placeholder="e.g. Short sentences. I say “I built” rather than “I was responsible for”. Canadian spelling. No buzzwords."
+                value={settings.voiceNotes}
+                onChange={(e) => editSettings('voiceNotes', e.target.value)}
+              />
+            </label>
+            <datalist id="llm-models">{models.map((m) => <option key={m} value={m} />)}</datalist>
+            <TestLlm dirty={dirty} onModels={setModels} />
+            <div className="row">
+              <label className="check">
+                <input type="checkbox" checked={settings.aiFieldMapping} onChange={(e) => editSettings('aiFieldMapping', e.target.checked)} />
+                Let the AI work out which profile field an unrecognised form field is
+              </label>
+            </div>
             <small className="hint">
-              With a key set, an open-ended question that has no close saved answer is drafted by
-              Claude. Only that question, the job posting text, your name, links, education, work
-              history and a few of your saved answers are sent to api.anthropic.com: never your
-              contact details, address, salary or demographic answers. Without a key nothing is
-              sent and the field is left empty. The key is never included in exports.
+              Once a provider is set up, an open-ended question with no close saved answer is drafted
+              by the model you chose. That sends the question, the job posting text, your name,
+              links, education, work history and a few of your saved answers to that provider: never
+              your contact details, address, salary or demographic answers. Recognising fields sends
+              only the labels and options of fields the built-in rules did not recognise, once per
+              site (the result is remembered). Without a provider nothing is sent. Keys are never
+              included in exports.
             </small>
           </>,
         )}
@@ -423,6 +491,37 @@ export function App() {
 }
 
 /** Signs in to Google and reads the sheet, so setup problems show up here and not on a real application. */
+const PROVIDERS: ProviderId[] = ['anthropic', 'openai', 'gemini', 'custom'];
+const PROVIDER_NAMES: Record<ProviderId, string> = { ...PROVIDER_LABELS, custom: 'OpenAI-compatible (OpenRouter, Groq, Ollama, …)' };
+
+/** Checks the saved provider settings by listing its models: no prompt is sent, so it costs nothing. */
+function TestLlm({ dirty, onModels }: { dirty: boolean; onModels: (models: string[]) => void }) {
+  const [state, setState] = useState<'idle' | 'testing' | { ok: boolean; text: string }>('idle');
+  const test = async () => {
+    setState('testing');
+    const msg: ToBackground = { type: 'test-llm' };
+    const res = (await chrome.runtime.sendMessage(msg)) as TestLlmResult | undefined;
+    if (!res) return setState({ ok: false, text: 'The extension did not respond. Reload this page and try again.' });
+    if (!res.ok) return setState({ ok: false, text: res.message });
+    onModels(res.models);
+    setState({
+      ok: true,
+      text: res.models.length
+        ? `Connected to ${res.label}. ${res.models.length} models available: start typing in a model box to pick one.`
+        : `Connected to ${res.label}. It did not list its models, so type the model name by hand.`,
+    });
+  };
+  return (
+    <div className="row">
+      <button className="ghost" onClick={test} disabled={state === 'testing'}>
+        {state === 'testing' ? 'Testing…' : 'Test connection and list models'}
+      </button>
+      {dirty && <small className="hint">Save your changes first: the test uses the saved settings.</small>}
+      {typeof state === 'object' && <span className={`msg ${state.ok ? 'ok' : 'err'}`} role="status">{state.text}</span>}
+    </div>
+  );
+}
+
 function TestSheets({ dirty }: { dirty: boolean }) {
   const [state, setState] = useState<'idle' | 'testing' | { ok: boolean; text: string }>('idle');
   const test = async () => {

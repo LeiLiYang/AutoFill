@@ -74,9 +74,10 @@ export function samplesFromPaste(pasted: string, now: Date = new Date(), uuid: (
 /** Writing samples saved without a question: they show who the applicant is rather than answer something. */
 export const isSample = (a: Answer) => !a.question.trim();
 
-/** Characters of background samples sent per request, and the cap on any single sample. */
-const BACKGROUND_BUDGET = 8000;
-const BACKGROUND_EACH = 1800;
+/** How many writing samples go with one question, and the cap on any single sample or past answer. */
+const BACKGROUND_MAX = 3;
+const BACKGROUND_EACH = 1500;
+const PAST_ANSWER_EACH = 1200;
 
 export interface PromptSamples {
   /** Past question/answer pairs most related to this question: style and content examples. */
@@ -85,23 +86,31 @@ export interface PromptSamples {
   background: Answer[];
 }
 
+/** Share of the question's meaningful words that a writing sample also uses. */
+function sampleRelevance(question: Set<string>, sample: string): number {
+  if (!question.size) return 0;
+  const words = tokens(sample);
+  return [...question].filter((w) => words.has(w)).length / question.size;
+}
+
 /**
- * What to show the model besides the profile. Entries saved without a question are always included
- * (newest first, within a size budget): they are how the model learns about the applicant. Entries
- * with a question are ranked by relevance, falling back to the most recent when none relate.
+ * What to show the model besides the profile, kept small on purpose: every sample is paid for on
+ * every question. Writing samples (saved without a question) are ranked by how much they share
+ * with the question and the best few are sent; with nothing to rank on, the newest stand in so the
+ * model still hears the applicant's voice. Past answers are sent only when they relate to the
+ * question, except that one recent answer stands in when there is no other writing to learn from.
  */
 export function styleSamples(question: string, bank: Answer[], max = 3): PromptSamples {
   const usable = bank.filter((a) => a.answer.trim());
   const byNewest = (a: Answer, b: Answer) => b.updatedAt.localeCompare(a.updatedAt);
 
-  const background: Answer[] = [];
-  let used = 0;
-  for (const s of usable.filter(isSample).sort(byNewest)) {
-    const text = s.answer.trim().slice(0, BACKGROUND_EACH);
-    if (used + text.length > BACKGROUND_BUDGET) break;
-    background.push({ ...s, answer: text });
-    used += text.length;
-  }
+  const asked = tokens(question);
+  const background = usable
+    .filter(isSample)
+    .map((entry) => ({ entry, score: sampleRelevance(asked, entry.answer) }))
+    .sort((a, b) => b.score - a.score || byNewest(a.entry, b.entry))
+    .slice(0, BACKGROUND_MAX)
+    .map(({ entry }) => ({ ...entry, answer: entry.answer.trim().slice(0, BACKGROUND_EACH) }));
 
   const withQuestion = usable.filter((a) => !isSample(a));
   const related = withQuestion
@@ -110,6 +119,6 @@ export function styleSamples(question: string, bank: Answer[], max = 3): PromptS
     .sort((a, b) => b.score - a.score)
     .slice(0, max)
     .map((r) => r.entry);
-  const qa = related.length ? related : withQuestion.sort(byNewest).slice(0, Math.min(2, max));
-  return { qa, background };
+  const qa = related.length || background.length ? related : withQuestion.sort(byNewest).slice(0, 1);
+  return { qa: qa.map((e) => ({ ...e, answer: e.answer.trim().slice(0, PAST_ANSWER_EACH) })), background };
 }

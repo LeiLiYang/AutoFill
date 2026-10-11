@@ -201,6 +201,13 @@ export const installClaudeStub = (ext: Ext, reply: { text?: string; stop_reason?
 export const claudeCalls = (ext: Ext) =>
   ext.worker.evaluate(() => (globalThis as any).__claudeCalls as { apiKey: string; params: any }[]);
 
+/** Everything one request sent the model, whatever blocks it was split into for caching. */
+export const promptText = (params: any): string =>
+  [params.system, params.messages[0].content].flatMap((part: any) => (typeof part === 'string' ? [part] : part.map((b: any) => b.text))).join('');
+
+/** Forget AI drafts stored for earlier fills, so a test gets the reply it stubbed. */
+export const clearDrafts = (ext: Ext) => ext.worker.evaluate(() => chrome.storage.local.remove(['answerDrafts', 'fieldMapCache']));
+
 /** Replace Google Sheets with an in-memory fake living in the service worker (state in globalThis.__fake). */
 export async function installSheetsStub(ext: Ext): Promise<void> {
   await ext.worker.evaluate(() => {

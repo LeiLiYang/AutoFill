@@ -11,7 +11,7 @@ These are enforced in code and covered by tests, not just promises:
 - **Never submits.** It does not click Submit, Apply, Next, Continue or Save and Continue, and never calls `form.submit()`. All clicking goes through one guarded module ([`src/fill/safety.ts`](src/fill/safety.ts)), and an ESLint rule bans `.click()`, `.submit()` and `.requestSubmit()` anywhere else in page-facing code. The end-to-end tests record every submit event and every click on a submit-like control and assert there are zero.
 - **Never touches CAPTCHAs.** Anything inside reCAPTCHA, hCaptcha, Turnstile or similar widgets (including their hidden response fields) is skipped. Password fields are never filled.
 - **Runs only when you ask.** There are no content scripts in the manifest. Nothing runs on page load; the script is injected only when you click the toolbar button or press the shortcut.
-- **Keeps your data local.** Profile, resume and answers live in `chrome.storage.local` / IndexedDB. No analytics, no remote server. The only outbound calls are Google Sheets (when you log an application) and, only if you add an API key, Anthropic (see [Privacy](#privacy)).
+- **Keeps your data local.** Profile, resume and answers live in `chrome.storage.local` / IndexedDB. No analytics, no remote server. The only outbound calls are Google Sheets (when you log an application) and, only if you set up an AI provider, that provider (Anthropic, OpenAI, Google Gemini, or any OpenAI-compatible server you point it at; see [Privacy](#privacy)).
 - **Logs nothing automatically.** A row is written only after you confirm the log card.
 
 ## Install
@@ -42,7 +42,7 @@ Open the extension's options page (click the icon, then *Profile & settings*):
 4. **Answer bank** has two kinds of entry:
    - **With a question** ("Why this company?"), plus optional tags: reused directly when a form asks something similar.
    - **Without a question** (a *writing sample*): if you only have your old answers and not the questions, paste them into the box at the top of the tab (several at once, separated by a blank line or `---`; each answer needs at least 20 characters) and press the **Save** button at the bottom of the page. They are never typed into forms. With an API key, they tell the AI what you've built, what you care about and how you write, and it can draw on those facts when drafting answers to new questions.
-5. **Settings**: Google Sheet ID and tab name, optional Anthropic API key and model name.
+5. **Settings**: Google Sheet ID and tab name, and an optional AI provider: Anthropic, OpenAI, Google Gemini, or an OpenAI-compatible server (OpenRouter, Groq, a local Ollama). Enter the key and model, then **Test connection and list models** to check the key and pick a model from the provider's own list (no prompt is sent, so it costs nothing).
 6. **Import / export**: back up everything to one JSON file (resume as base64). The API key is never exported. Keep backups out of git.
 
 Click **Save** (bottom bar) after editing.
@@ -148,10 +148,12 @@ Notes:
 |------|----------------|----------------------|
 | Profile, resume, answer bank, logged rows, posting cache | `chrome.storage.local`, IndexedDB | No |
 | Sheet ID, tab name | `chrome.storage.local` | No |
-| Anthropic API key | `chrome.storage.local` | Only sent to Anthropic as your credential. Never exported |
+| AI provider API keys | `chrome.storage.local` | Each is only sent to its own provider as your credential. Never exported |
 | A logged row | local copy + your Google Sheet | Yes, to Google Sheets, only after you confirm |
 
-**AI answers (optional).** Only when you have entered an API key, and only for an open-ended textarea with no close answer-bank match, the background worker calls Anthropic's API (official SDK) with: that question, the job posting text, your name, links, education, work history, up to three related saved answers, and your question-less writing samples (up to about 8,000 characters in total, newest first). It never sends your email, phone, address, salary or EEO answers. Anything you paste into the answer bank may be sent, so don't paste anything you wouldn't want Anthropic's API to see. The prompt asks for one concise answer of at most two paragraphs that blends the most relevant details from your past answers (it must not list or stack them), and forbids inventing experience; if your data can't support an answer the model replies with a marker and the field is left empty and flagged red. Without a key nothing is sent and the field is left empty. The model name is configurable in settings (default `claude-opus-5-5`).
+**AI answers (optional).** Only when a provider is set up, and only for an open-ended question with no close answer-bank match, the background worker calls the provider you chose (Anthropic through its official SDK; OpenAI, Gemini and OpenAI-compatible servers over HTTPS) with: that question, the job posting text (benefits, pay and EEO sections removed), your name, links, education, work history, your optional "how you write" notes, up to three related saved answers, and the three question-less writing samples closest to the question. It never sends your email, phone, address, salary or EEO answers. Anything you paste into the answer bank may be sent, so don't paste anything you wouldn't want that provider to see. The prompt sizes the answer to the question (a sentence for a factual question, one paragraph for most, two only when the form asks for an essay or cover letter), asks for plain prose in your own voice, and forbids inventing experience; if your data can't support an answer the model replies with a marker and the field is left empty and flagged red. Without a provider nothing is sent and the field is left empty.
+
+**Keeping API usage down.** The instructions and the posting + profile are sent as a cacheable prefix, so every question after the first on a page reads them at a fraction of the price (explicit cache breakpoints on Anthropic; OpenAI and Gemini cache a repeated prefix on their own). A draft is stored per posting and question for 30 days, so filling the same application again, or its next step, costs nothing; turn on "Overwrite already-filled fields" to get a fresh draft. The default Anthropic model is `claude-opus-5-5`; `claude-sonnet-5-5` is a cheaper choice for these short answers.
 
 The manifest grants host access to all sites (`<all_urls>`). That is what lets the filler reach an application form embedded from another domain; it does not change when the extension runs. There are still no declared content scripts: nothing is injected into any page until you press Fill, Log or Save. The only network calls the extension itself makes are to `sheets.googleapis.com` and, with an API key, `api.anthropic.com`.
 
@@ -163,7 +165,7 @@ The manifest grants host access to all sites (`<all_urls>`). That is what lets t
 
 - **Live ATS markup.** The Greenhouse, Lever, Ashby, Workday and LinkedIn adapters were written against fixtures modelled on those sites' public markup (ids, `data-automation-id`s, class patterns). Real pages change and have variants (for example the newer React Greenhouse boards, Ashby's real button groups, Workday's multi-select "How did you hear about us" widget, Lever's location suggestions, LinkedIn selectors). Expect to adjust hints in [`src/adapters/`](src/adapters) or add rows to [`src/config/matchRules.ts`](src/config/matchRules.ts), the one data file that drives label matching.
 - **Google.** The OAuth flow and the Sheets append against Google's real servers (including that `2026/10/04` is parsed as a date in your sheet's locale). Use **Test Google Sheets connection** first, then log one row to a scratch tab.
-- **The real Anthropic API.** Tested with a stubbed client and the SDK's real error classes, not with a live call.
+- **The real provider APIs.** Anthropic is tested with a stubbed client and the SDK's real error classes; OpenAI, Gemini and OpenAI-compatible servers with a stubbed `fetch`. None with a live call.
 
 Things deliberately left for you: free-text answers with no saved answer and no API key, "How did you hear about us", consent checkboxes, and any question the matcher can't recognise. They are listed in the panel.
 

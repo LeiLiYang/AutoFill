@@ -107,11 +107,36 @@ export type Education = z.infer<typeof EducationSchema>;
 export type Experience = z.infer<typeof ExperienceSchema>;
 export type Answer = z.infer<typeof AnswerSchema>;
 
+export const ProviderSchema = z.enum(['anthropic', 'openai', 'gemini', 'custom']);
+
+/** A non-Anthropic provider. `baseUrl` is only used by the OpenAI-compatible (custom) one. */
+const ProviderSettingsSchema = z
+  .object({
+    apiKey: str,
+    /** Model that writes free-text answers. */
+    model: str,
+    /** Cheaper model for mapping unrecognised fields; blank = use `model`. */
+    mappingModel: str,
+    baseUrl: str,
+  })
+  .default({});
+
 export const SettingsSchema = z.object({
   sheetId: str,
   tabName: z.string().default('Sheet1'),
+  /** Which LLM drafts free-text answers and maps unrecognised fields. */
+  provider: ProviderSchema.default('anthropic'),
   anthropicApiKey: str,
+  /** The Anthropic model for free-text answers. */
   model: z.string().default('claude-opus-5-5'),
+  anthropicMappingModel: z.string().default('claude-haiku-5-5'),
+  providers: z
+    .object({ openai: ProviderSettingsSchema, gemini: ProviderSettingsSchema, custom: ProviderSettingsSchema })
+    .default({}),
+  /** How the applicant writes, in their own words: sent with every free-text question. */
+  voiceNotes: str,
+  /** Ask the LLM which profile field an unrecognised form field is (labels only; cached per site). */
+  aiFieldMapping: z.boolean().default(true),
   overwrite: z.boolean().default(false),
 });
 export type Settings = z.infer<typeof SettingsSchema>;

@@ -6,6 +6,7 @@ import {
   ProfileSchema,
   SettingsSchema,
   type FileKind,
+  type Settings,
 } from './schema';
 import { loadProfile, loadSettings, saveProfile, saveSettings } from './store';
 import type { KeyValueStore } from './storage';
@@ -22,7 +23,7 @@ const BackupSchema = z.object({
   version: z.literal(1),
   exportedAt: z.string(),
   profile: ProfileSchema,
-  // The API key is intentionally excluded from backups.
+  // API keys are intentionally excluded from backups.
   settings: SettingsSchema.omit({ anthropicApiKey: true }),
   files: z.record(FileKindSchema, ExportedFileSchema).default({}),
 });
@@ -30,8 +31,18 @@ export type Backup = z.infer<typeof BackupSchema>;
 
 const KINDS: FileKind[] = ['resume', 'coverLetter'];
 
+type Providers = Settings['providers'];
+const PROVIDER_IDS = ['openai', 'gemini', 'custom'] as const;
+
+function withoutKeys(providers: Providers): Providers {
+  const out = { ...providers };
+  for (const id of PROVIDER_IDS) out[id] = { ...providers[id], apiKey: '' };
+  return out;
+}
+
 export async function exportBackup(kv: KeyValueStore = chromeLocalStore): Promise<Backup> {
-  const { anthropicApiKey: _omit, ...settings } = await loadSettings(kv);
+  const { anthropicApiKey: _omit, ...withKeys } = await loadSettings(kv);
+  const settings = { ...withKeys, providers: withoutKeys(withKeys.providers) };
   const files: Backup['files'] = {};
   for (const kind of KINDS) {
     const f = await getFile(kind);
@@ -58,7 +69,10 @@ export async function importBackup(json: unknown, kv: KeyValueStore = chromeLoca
   const backup = BackupSchema.parse(json);
   const current = await loadSettings(kv);
   await saveProfile(backup.profile, kv);
-  await saveSettings({ ...current, ...backup.settings }, kv);
+  // A backup never carries keys: keep the ones already on this device.
+  const providers = { ...backup.settings.providers };
+  for (const id of PROVIDER_IDS) providers[id] = { ...providers[id], apiKey: providers[id].apiKey || current.providers[id].apiKey };
+  await saveSettings({ ...current, ...backup.settings, providers }, kv);
   for (const kind of KINDS) {
     const f = backup.files[kind];
     if (f) {
