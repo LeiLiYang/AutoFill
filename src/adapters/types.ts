@@ -90,6 +90,11 @@ export interface FillOptions {
   freeText?: (d: FieldDescriptor) => Promise<FreeTextResult>;
   /** A saved answer for a question no rule recognises (dropdowns, radios and short text boxes too). */
   bankAnswer?: (d: FieldDescriptor) => { text: string; score: number } | null;
+  /**
+   * Second opinion on fields no rule recognised (the optional LLM, labels only): field id → what
+   * it asks for. Absent or failing = those fields stay unrecognised.
+   */
+  classify?: (fields: FieldDescriptor[]) => Promise<Record<string, ProfileKey | 'freeText' | 'none'>>;
   /** Pause before looking for fields that a filled answer revealed. 0 turns the second look off. */
   rescanDelayMs?: number;
 }

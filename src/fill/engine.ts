@@ -10,7 +10,7 @@ import type {
   ProfileKey,
 } from '../adapters/types';
 import { hasValue } from '../detect/descriptor';
-import { matchField } from '../detect/match';
+import { CONFIDENCE, matchField } from '../detect/match';
 import { resolveValue } from '../detect/values';
 import { BANK_CONFIDENT } from '../llm/answerBank';
 import type { Profile } from '../profile/schema';
@@ -76,6 +76,9 @@ const BANK_KINDS = new Set<FieldDescriptor['kind']>(['text', 'select', 'radio', 
 
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** The text a person would read to know what a field asks. */
+export const questionOf = (d: FieldDescriptor) => (d.label || d.ariaLabel || d.nearbyText || d.placeholder || '').trim();
+
 export async function runFill({ adapter, ctx, profile, options }: RunFillInput): Promise<FillRun> {
   const reports: FieldReport[] = [];
   const descriptors = new Map<string, FieldDescriptor>();
@@ -95,8 +98,25 @@ export async function runFill({ adapter, ctx, profile, options }: RunFillInput):
   }
   return { reports, descriptors, generated };
 
+  /** Ask the optional LLM about fields no rule recognised, unless a saved answer or an existing value settles them. */
+  async function classifyUnmatched(fields: FieldDescriptor[], matches: (Match | null)[]): Promise<void> {
+    if (!options.classify) return;
+    const open = fields.filter((d, i) => !matches[i] && !(d.currentValue && !options.overwrite) && questionOf(d) && !bankAnswerFor(d));
+    if (!open.length) return;
+    const classes = await options.classify(open).catch(() => ({}) as Record<string, string>);
+    fields.forEach((d, i) => {
+      const c = classes[d.id];
+      if (!matches[i] && c && c !== 'none') matches[i] = { key: c as Match['key'], confidence: CONFIDENCE.ai, rule: 'ai' };
+    });
+  }
+
+  function bankAnswerFor(d: FieldDescriptor) {
+    return BANK_KINDS.has(d.kind) && questionOf(d).length >= MIN_QUESTION_CHARS ? (options.bankAnswer?.(d) ?? null) : null;
+  }
+
   async function fillFields(fields: FieldDescriptor[]): Promise<void> {
-    const matches = fields.map((d) => matchField(d));
+    const matches: (Match | null)[] = fields.map((d) => matchField(d));
+    await classifyUnmatched(fields, matches);
     assignEntryIndexes(fields, matches);
 
     for (const [i, d] of fields.entries()) {
@@ -112,8 +132,7 @@ export async function runFill({ adapter, ctx, profile, options }: RunFillInput):
       const match = matches[i] ?? null;
       if (!match) {
         // No rule knows this field. If it reads like a question you have answered before, use that.
-        const question = (d.label || d.nearbyText || '').trim();
-        const bank = BANK_KINDS.has(d.kind) && question.length >= MIN_QUESTION_CHARS ? options.bankAnswer?.(d) : null;
+        const bank = bankAnswerFor(d);
         if (bank && !(d.currentValue && !options.overwrite)) {
           const value: FillValue = d.kind === 'text' ? { type: 'text', text: bank.text } : { type: 'choice', text: bank.text, targets: [bank.text] };
           const result = await adapter.fill(d, value, options).catch(() => null);
@@ -191,6 +210,7 @@ export async function runFill({ adapter, ctx, profile, options }: RunFillInput):
             key: match.key,
             confidence: match.confidence,
             valuePreview: preview(result.detail ?? (value.type === 'text' ? value.text : value.type)),
+            ...(match.rule === 'ai' ? { detail: 'matched by AI: check it' } : {}),
           });
         } else {
           report(result.status, { key: match.key, confidence: match.confidence, detail: result.detail });

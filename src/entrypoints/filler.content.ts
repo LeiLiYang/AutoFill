@@ -3,7 +3,8 @@ import { pickAdapter } from '../adapters/registry';
 import type { FieldDescriptor, FreeTextResult } from '../adapters/types';
 import { CONTROL_SELECTOR } from '../detect/descriptor';
 import { deepQueryAll } from '../detect/deepQuery';
-import { runFill } from '../fill/engine';
+import { questionOf, runFill } from '../fill/engine';
+import type { FieldClass } from '../llm/classifyFields';
 import { findAnswer } from '../llm/answerBank';
 import type { AnswerResult } from '../llm/client';
 import { llmConfig, notReadyReason } from '../llm/config';
@@ -176,7 +177,18 @@ export default defineContentScript({
         const hit = findAnswer((d.label || d.nearbyText || '').trim(), profile.answerBank);
         return hit ? { text: hit.entry.answer, score: hit.score } : null;
       };
-      const result = await runFill({ adapter, ctx, profile, options: { overwrite, getFile, freeText: makeFreeText(profile, overwrite), bankAnswer } });
+      const settings = await loadSettings();
+      // Fields no rule recognises: ask the LLM what they are. Only their labels and options are sent.
+      const classify =
+        settings.aiFieldMapping && llmConfig(settings).ready
+          ? async (fields: FieldDescriptor[]) =>
+              (await send<Record<string, FieldClass> | undefined>({
+                type: 'classify-fields',
+                host: location.hostname,
+                fields: fields.map((d) => ({ id: d.id, label: questionOf(d), kind: d.kind, options: d.options?.map((o) => o.text) })),
+              })) ?? {}
+          : undefined;
+      const result = await runFill({ adapter, ctx, profile, options: { overwrite, getFile, freeText: makeFreeText(profile, overwrite), bankAnswer, classify } });
       descriptors = result.descriptors;
       lastReports = result.reports;
       generated = result.generated;

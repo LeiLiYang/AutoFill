@@ -1,6 +1,7 @@
 import { savePosting } from '../background/savePosting';
 import { describeLlmError, sdkDeps, type AnswerResult, type ClaudeDeps } from '../llm/client';
 import { llmConfig, notReadyReason } from '../llm/config';
+import { classifyFields } from '../llm/classifyFields';
 import { draftKey, getDraft, saveDraft } from '../llm/draftCache';
 import { makeClient } from '../llm/providers';
 import type { Fetch } from '../llm/providers/types';
@@ -376,6 +377,11 @@ export default defineBackground(() => {
         return true;
       case 'generate-answer':
         runGenerateAnswer(tabId, msg).then(sendResponse);
+        return true;
+      case 'classify-fields':
+        loadSettings()
+          .then((s) => classifyFields({ llm: llmClient, kv: chromeLocalStore }, llmConfig(s), msg.host, msg.fields))
+          .then(sendResponse, () => sendResponse({}));
         return true;
       case 'cache-posting':
         cachePosting(chromeLocalStore, msg.posting.canonicalUrl, {

@@ -10,6 +10,8 @@ export const CONFIDENCE = {
   label: 0.85,
   nearby: 0.6,
   fuzzyMax: 0.65,
+  /** The LLM's reading of a label no rule recognised: filled, always shown for review. */
+  ai: 0.6,
 } as const;
 
 /** Labels longer than this are questions, not field names: never fuzzy-match them. */

@@ -47,7 +47,8 @@ test('a close saved answer is used first and no API call is made, even with a ke
   await triggerFill(ext, page);
   await expect.poll(() => page.locator('#q_why').inputValue()).toBe('Because I love payments.');
   expect(await page.locator('#q_why').getAttribute('data-autofill-level')).toBe('green'); // exact match
-  expect(await claudeCalls(ext)).toHaveLength(0);
+  // No answer was requested. (With a key set, unrecognised field labels may still be sent for recognition.)
+  expect((await claudeCalls(ext)).filter((c) => promptText(c.params).includes('<question>'))).toHaveLength(0);
   await page.close();
 });
 
@@ -143,5 +144,48 @@ test('filling the same application again reuses the draft instead of paying for 
   await triggerFill(ext, again);
   await expect.poll(() => again.locator('#q_why').inputValue()).toContain('Acme');
   expect(await asked()).toBe(1); // no second call
+  await again.close();
+});
+
+test('fields no rule recognises are identified by the model from their labels alone, once per site', async () => {
+  await patchSettings(ext, { anthropicApiKey: 'sk-test' });
+  // The "model" says the hat question asks for the city and the pizza question is nothing we can fill.
+  await ext.worker.evaluate(() => {
+    const g = globalThis as any;
+    g.__claudeCalls = [];
+    g.__autofill.setClaude((apiKey: string) => ({
+      create: async (params: any) => {
+        g.__claudeCalls.push({ apiKey, params });
+        const text: string = params.messages[0].content;
+        const rows = JSON.parse(text.slice(text.indexOf('['), text.lastIndexOf(']') + 1)) as { id: string; label: string }[];
+        const map = Object.fromEntries(rows.map((r) => [r.id, r.label.includes('hat') ? 'city' : 'none']));
+        return { content: [{ type: 'text', text: JSON.stringify(map) }], stop_reason: 'end_turn' };
+      },
+    }));
+  });
+
+  const page = await ext.context.newPage();
+  await page.goto(`${servers.main.origin}/generic/odd.html`);
+  await triggerFill(ext, page);
+  await expect.poll(() => page.locator('#b').inputValue()).toBe('Montreal');
+  expect(await page.locator('#b').getAttribute('data-autofill-level')).toBe('yellow'); // always shown for review
+  expect(await page.locator('#c').inputValue()).toBe('');
+  await expect(page.locator('#autofill-review-host .panel')).toContainText('matched by AI');
+
+  const calls = await claudeCalls(ext);
+  expect(calls).toHaveLength(1);
+  expect(calls[0]!.params.model).toBe('claude-haiku-5-5'); // the small model, not the answer model
+  const sent = promptText(calls[0]!.params);
+  expect(sent).toContain('Where do you hang your hat?');
+  expect(sent).not.toContain('First name'); // recognised by a rule: never sent
+  for (const mine of ['Ada', 'Lovelace', 'Montreal', 'ada@example.com']) expect(sent).not.toContain(mine); // no profile data
+  await page.close();
+
+  // Second visit: the site's labels are remembered, so nothing is sent.
+  const again = await ext.context.newPage();
+  await again.goto(`${servers.main.origin}/generic/odd.html`);
+  await triggerFill(ext, again);
+  await expect.poll(() => again.locator('#b').inputValue()).toBe('Montreal');
+  expect(await claudeCalls(ext)).toHaveLength(1);
   await again.close();
 });

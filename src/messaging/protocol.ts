@@ -1,4 +1,5 @@
 import type { FieldReport } from '../adapters/types';
+import type { FieldToClassify } from '../llm/classifyFields';
 import type { ExtractedPosting } from '../posting/extract';
 import type { FormAnswer, SavePostingResult } from '../posting/save';
 import type { FileKind } from '../profile/schema';
@@ -70,6 +71,8 @@ export type ToBackground =
   | { type: 'log-application'; entry: LogEntry; force?: boolean; alsoSavePosting?: boolean; tabId?: number }
   /** Draft one free-text answer with the LLM (the only call that sends profile/posting text off-device). */
   | { type: 'generate-answer'; question: string; maxLength?: number; /** Ignore a stored draft and write a new one. */ fresh?: boolean }
+  /** Ask the LLM what unrecognised fields are (labels and options only; answers are remembered per site). */
+  | { type: 'classify-fields'; host: string; fields: FieldToClassify[] }
   /** Remember this page's job description so a later form page (e.g. Workday /apply) can use it. */
   | { type: 'cache-posting'; posting: ExtractedPosting }
   /** Settings page: sign in and read the sheet, to check the Sheet ID, tab name and OAuth setup. */
