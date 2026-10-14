@@ -2,7 +2,7 @@
 
 A Chrome extension (Manifest V3) that fills job application forms from a profile stored on your own machine, so you only have to review the form and click **Submit** yourself. It also logs each application to a Google Sheet and archives the job posting.
 
-Works on Greenhouse (including embedded iframes), Lever, Ashby and Workday, plus a generic label-based fallback for other sites. LinkedIn is **log and save only**: it never autofills there.
+Works on Greenhouse (including embedded iframes), Lever, Ashby and Workday, plus a generic label-based fallback for other sites. 
 
 ## What it will never do
 
